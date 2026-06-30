@@ -31,6 +31,11 @@ export type TeamMember = {
  * each user up in Clerk (this app has no local users table — Clerk is the
  * single source of truth for identity, Supabase only knows the store_id
  * relationship).
+ *
+ * Clerk's API is an external network call and can transiently fail (same
+ * class of issue as the currentUser() fragility documented for
+ * get-current-store.ts) — caught here so a Clerk hiccup degrades to an
+ * empty/partial team list instead of crashing the entire Settings page.
  */
 export async function getTeamMembers(): Promise<TeamMember[]> {
   const store = await getCurrentStore();
@@ -42,11 +47,17 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 
   if (error || !members?.length) return [];
 
-  const client = await clerkClient();
-  const { data: users } = await client.users.getUserList({
-    userId: members.map((m) => m.user_id),
-    limit: members.length,
-  });
+  let users: Array<{ id: string; primaryEmailAddress: { emailAddress: string } | null; fullName: string | null }> = [];
+  try {
+    const client = await clerkClient();
+    const result = await client.users.getUserList({
+      userId: members.map((m) => m.user_id),
+      limit: members.length,
+    });
+    users = result.data;
+  } catch {
+    // Degrade gracefully — see doc comment above.
+  }
 
   return members.map((member) => {
     const user = users.find((u) => u.id === member.user_id);

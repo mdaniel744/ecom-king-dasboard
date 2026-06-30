@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteProduct } from "@/app/dashboard/products/actions";
@@ -15,8 +16,13 @@ export function DeleteProductButton({ productId }: { productId: string }) {
       disabled={isPending}
       onClick={() => {
         if (!confirm("Delete this product? This cannot be undone.")) return;
-        startTransition(() => {
-          deleteProduct(productId);
+        startTransition(async () => {
+          const result = await deleteProduct(productId);
+          if (result.success) {
+            toast.success("Product deleted");
+          } else {
+            toast.error(result.error ?? "Failed to delete product.");
+          }
         });
       }}
     >

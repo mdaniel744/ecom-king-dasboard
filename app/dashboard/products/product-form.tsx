@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import Link from "next/link";
 import { Plus, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,19 +17,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldError } from "@/components/dashboard/field-error";
+import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import type { Category, Product } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
+import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 
 type Props = {
-  action: (formData: FormData) => void;
+  action: (formData: FormData) => Promise<ActionResult>;
   product?: Product;
   categories: Category[];
   attributeDefs: AttributeDef[];
 };
 
 export function ProductForm({ action, product, categories, attributeDefs }: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
   const initialAttrs = product?.attributes ? Object.entries(product.attributes) : [];
   const [attrs, setAttrs] = useState<[string, string][]>(
     initialAttrs.length ? initialAttrs : [["", ""]]
@@ -36,6 +46,22 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
   const [images, setImages] = useState<string[]>(
     product?.images?.length ? product.images : [""]
   );
+
+  function handleSubmit(formData: FormData) {
+    setError(null);
+    setFieldErrors({});
+    startTransition(async () => {
+      const result = await action(formData);
+      if (result.success) {
+        toast.success(product ? "Product updated" : "Product created");
+        router.push("/dashboard/products");
+      } else {
+        setError(result.error);
+        setFieldErrors(result.fieldErrors);
+        toast.error(result.error);
+      }
+    });
+  }
 
   function updateImage(index: number, newValue: string) {
     setImages((prev) => prev.map((url, i) => (i === index ? newValue : url)));
@@ -57,7 +83,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
   }
 
   return (
-    <form action={action}>
+    <form action={handleSubmit}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button asChild variant="ghost" size="icon">
@@ -69,7 +95,13 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
             {product ? "Edit Product" : "New Product"}
           </h1>
         </div>
-        <Button type="submit">Save</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Saving..." : "Save"}
+        </Button>
+      </div>
+
+      <div className="mt-4">
+        <ActionErrorBanner message={error} />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -88,6 +120,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   defaultValue={product?.name}
                   placeholder="e.g. 20ft High Cube Container"
                 />
+                <FieldError name="name" errors={fieldErrors} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="slug">URL Slug</Label>
@@ -97,6 +130,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   defaultValue={product?.slug}
                   placeholder="auto-generated from title if left blank"
                 />
+                <FieldError name="slug" errors={fieldErrors} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="short_description">Short Description</Label>
@@ -106,6 +140,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   defaultValue={product?.short_description ?? ""}
                   placeholder="Brief summary shown on product cards"
                 />
+                <FieldError name="short_description" errors={fieldErrors} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="description">Description</Label>
@@ -116,6 +151,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   defaultValue={product?.description ?? ""}
                   placeholder="Full product description..."
                 />
+                <FieldError name="description" errors={fieldErrors} />
               </div>
             </CardContent>
           </Card>
@@ -229,6 +265,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                     required
                     defaultValue={product?.price ?? ""}
                   />
+                  <FieldError name="price" errors={fieldErrors} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="currency">Currency</Label>
@@ -244,6 +281,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError name="currency" errors={fieldErrors} />
                 </div>
               </div>
 
@@ -257,6 +295,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   defaultValue={product?.sale_price ?? ""}
                   placeholder="Leave blank if not on sale"
                 />
+                <FieldError name="sale_price" errors={fieldErrors} />
                 <p className="text-xs text-muted-foreground">
                   Shown to Google as a discounted price next to the regular
                   price — must be lower than Price.
@@ -300,6 +339,7 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   placeholder="e.g. Bestseller, Neu, Angebot (optional)"
                   defaultValue={product?.badge ?? ""}
                 />
+                <FieldError name="badge" errors={fieldErrors} />
               </div>
 
               <div className="flex items-center gap-2">
@@ -339,11 +379,13 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                   type="number"
                   defaultValue={product?.stock_quantity ?? 0}
                 />
+                <FieldError name="stock_quantity" errors={fieldErrors} />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="sku">SKU</Label>
                 <Input id="sku" name="sku" defaultValue={product?.sku ?? ""} />
+                <FieldError name="sku" errors={fieldErrors} />
               </div>
             </CardContent>
           </Card>
@@ -356,10 +398,12 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
               <div className="space-y-1.5">
                 <Label htmlFor="brand">Brand</Label>
                 <Input id="brand" name="brand" defaultValue={product?.brand ?? ""} />
+                <FieldError name="brand" errors={fieldErrors} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mpn">MPN</Label>
                 <Input id="mpn" name="mpn" defaultValue={product?.mpn ?? ""} />
+                <FieldError name="mpn" errors={fieldErrors} />
                 <p className="text-xs text-muted-foreground">
                   Manufacturer Part Number. Needs Brand filled in too to
                   count as a valid identifier with Google.

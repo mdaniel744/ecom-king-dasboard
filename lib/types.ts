@@ -8,6 +8,22 @@ export type Store = {
   google_merchant_datasource_id: string | null;
   google_content_language: string;
   google_feed_label: string;
+  /** Locales to auto-translate into, beyond google_content_language (the
+   * store's own source language). e.g. ["en","fr"] for a German-source store. */
+  enabled_locales: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type Translation = {
+  id: string;
+  store_id: string;
+  entity_type: "product" | "category";
+  entity_id: string;
+  field_name: string;
+  locale: string;
+  value: string;
+  translator: "ai" | "human";
   created_at: string;
   updated_at: string;
 };

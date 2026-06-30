@@ -2,6 +2,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { RegisterServiceWorker } from "@/components/pwa/register-sw";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "Ecom King Dashboard",
@@ -35,6 +36,7 @@ export default function RootLayout({
         <body className="m-0 p-0">
           {children}
           <RegisterServiceWorker />
+          <Toaster richColors position="top-right" closeButton />
         </body>
       </html>
     </ClerkProvider>

@@ -2,7 +2,6 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { slugify } from "@/lib/slug";
@@ -13,25 +12,27 @@ import {
 } from "@/lib/google-merchant";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
 import { validate, validateId } from "@/lib/validation";
+import { syncTranslations } from "@/lib/translation-sync";
+import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import type { Product, ProductCondition, ProductStatus, Store } from "@/lib/types";
 
 const productPayloadSchema = z.object({
-  name: z.string().trim().min(1, "Title is required").max(500),
+  name: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
   slug: z.string().min(1).max(500),
-  short_description: z.string().trim().max(500).nullable(),
-  description: z.string().trim().max(10000).nullable(),
-  price: z.number().finite().min(0).nullable(),
-  sale_price: z.number().finite().min(0).nullable(),
-  currency: z.string().trim().length(3, "Currency must be a 3-letter code"),
-  sku: z.string().trim().max(200).nullable(),
-  stock_quantity: z.number().int().min(0),
+  short_description: z.string().trim().max(500, "Short description is too long (max 500 characters)").nullable(),
+  description: z.string().trim().max(10000, "Description is too long").nullable(),
+  price: z.number("Price must be a number").finite().min(0, "Price can't be negative").nullable(),
+  sale_price: z.number("Sale price must be a number").finite().min(0, "Sale price can't be negative").nullable(),
+  currency: z.string().trim().length(3, "Currency must be a 3-letter code, e.g. USD"),
+  sku: z.string().trim().max(200, "SKU is too long").nullable(),
+  stock_quantity: z.number("Stock quantity must be a number").int("Stock quantity must be a whole number").min(0, "Stock quantity can't be negative"),
   status: z.enum(["draft", "active", "archived"]),
   condition: z.enum(["new", "used", "refurbished"]),
-  brand: z.string().trim().max(200).nullable(),
-  mpn: z.string().trim().max(200).nullable(),
+  brand: z.string().trim().max(200, "Brand is too long").nullable(),
+  mpn: z.string().trim().max(200, "MPN is too long").nullable(),
   is_featured: z.boolean(),
-  badge: z.string().trim().max(100).nullable(),
-  category_id: z.string().uuid().nullable(),
+  badge: z.string().trim().max(100, "Badge text is too long (max 100 characters)").nullable(),
+  category_id: z.string().uuid("Choose a valid category").nullable(),
   images: z.array(z.string().trim().min(1).max(2000)).max(20, "Maximum 20 images"),
   attributes: z.record(z.string(), z.string()),
 });
@@ -83,50 +84,85 @@ function buildProductPayload(formData: FormData) {
   });
 }
 
-export async function createProduct(formData: FormData) {
-  const store = await getCurrentStore();
-  const payload = buildProductPayload(formData);
+export async function createProduct(formData: FormData): Promise<ActionResult> {
+  try {
+    const store = await getCurrentStore();
+    const payload = buildProductPayload(formData);
 
-  const { error } = await supabaseAdmin
-    .from("products")
-    .insert({ ...payload, store_id: store.id });
+    const { data: product, error } = await supabaseAdmin
+      .from("products")
+      .insert({ ...payload, store_id: store.id })
+      .select()
+      .single();
 
-  if (error) throw new Error(`Failed to create product: ${error.message}`);
+    if (error) throw error;
 
-  revalidatePath("/dashboard/products");
-  redirect("/dashboard/products");
+    await syncProductTranslations(store, product as Product);
+    revalidatePath("/dashboard/products");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
 }
 
-export async function updateProduct(productId: string, formData: FormData) {
-  productId = validateId(productId);
-  const store = await getCurrentStore();
-  const payload = buildProductPayload(formData);
+export async function updateProduct(productId: string, formData: FormData): Promise<ActionResult> {
+  try {
+    productId = validateId(productId);
+    const store = await getCurrentStore();
+    const payload = buildProductPayload(formData);
 
-  const { error } = await supabaseAdmin
-    .from("products")
-    .update(payload)
-    .eq("id", productId)
-    .eq("store_id", store.id);
+    const { data: product, error } = await supabaseAdmin
+      .from("products")
+      .update(payload)
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .select()
+      .single();
 
-  if (error) throw new Error(`Failed to update product: ${error.message}`);
+    if (error) throw error;
 
-  revalidatePath("/dashboard/products");
-  redirect("/dashboard/products");
+    await syncProductTranslations(store, product as Product);
+    revalidatePath("/dashboard/products");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
 }
 
-export async function deleteProduct(productId: string) {
-  productId = validateId(productId);
-  const store = await getCurrentStore();
+async function syncProductTranslations(store: Store, product: Product) {
+  const categoryPath = await buildCategoryBreadcrumb(product.category_id);
+  await syncTranslations({
+    store,
+    entityType: "product",
+    entityId: product.id,
+    categoryPath,
+    fields: {
+      name: product.name,
+      short_description: product.short_description,
+      description: product.description,
+      badge: product.badge,
+    },
+  });
+}
 
-  const { error } = await supabaseAdmin
-    .from("products")
-    .delete()
-    .eq("id", productId)
-    .eq("store_id", store.id);
+export async function deleteProduct(productId: string): Promise<ActionResult> {
+  try {
+    productId = validateId(productId);
+    const store = await getCurrentStore();
 
-  if (error) throw new Error(`Failed to delete product: ${error.message}`);
+    const { error } = await supabaseAdmin
+      .from("products")
+      .delete()
+      .eq("id", productId)
+      .eq("store_id", store.id);
 
-  revalidatePath("/dashboard/products");
+    if (error) throw error;
+
+    revalidatePath("/dashboard/products");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
 }
 
 /**

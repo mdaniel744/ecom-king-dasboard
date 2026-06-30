@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { createCategory, updateCategory } from "@/app/dashboard/categories/actions";
 import type { Category } from "@/lib/types";
 
@@ -34,6 +36,7 @@ export function CategoryDialog({
   const isEdit = !!category;
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   const parentOptions = categories.filter((cat) => cat.id !== category?.id);
@@ -56,17 +59,23 @@ export function CategoryDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Category" : "New Category"}</DialogTitle>
         </DialogHeader>
+        <ActionErrorBanner message={error} />
         <form
           ref={formRef}
           action={(formData) => {
+            setError(null);
             startTransition(async () => {
-              if (isEdit) {
-                await updateCategory(category!.id, formData);
+              const result = isEdit
+                ? await updateCategory(category!.id, formData)
+                : await createCategory(formData);
+              if (result.success) {
+                toast.success(isEdit ? "Category updated" : "Category created");
+                if (!isEdit) formRef.current?.reset();
+                setOpen(false);
               } else {
-                await createCategory(formData);
-                formRef.current?.reset();
+                setError(result.error);
+                toast.error(result.error);
               }
-              setOpen(false);
             });
           }}
           className="space-y-4"
