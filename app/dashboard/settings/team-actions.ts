@@ -1,10 +1,22 @@
 "use server";
 
+import { z } from "zod";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { validate } from "@/lib/validation";
 import type { StoreMemberRole } from "@/lib/types";
+
+const inviteSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+  role: z.enum(["manager", "staff"]),
+});
+
+// Clerk user IDs aren't UUIDs (format: "user_xxxxx"), so this is a shape
+// check, not a UUID check — still rejects obviously-malformed input before
+// it reaches a query.
+const clerkUserIdSchema = z.string().trim().min(1).max(100);
 
 export type TeamMember = {
   userId: string;
@@ -58,10 +70,14 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
     return { success: false, error: "Only the store owner can invite teammates." };
   }
 
-  const email = (formData.get("email") as string)?.trim().toLowerCase();
-  if (!email) return { success: false, error: "Enter an email address." };
+  const emailRaw = (formData.get("email") as string) ?? "";
+  const roleRaw = (formData.get("role") as string) === "staff" ? "staff" : "manager";
 
-  const role = (formData.get("role") as string) === "staff" ? "staff" : "manager";
+  const parsed = inviteSchema.safeParse({ email: emailRaw, role: roleRaw });
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+  const { email, role } = parsed.data;
 
   const client = await clerkClient();
   const { data: matches } = await client.users.getUserList({ emailAddress: [email] });
@@ -105,6 +121,7 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
 }
 
 export async function removeTeammate(targetUserId: string): Promise<InviteResult> {
+  targetUserId = validate(clerkUserIdSchema, targetUserId);
   const { userId } = await auth();
   const store = await getCurrentStore();
 

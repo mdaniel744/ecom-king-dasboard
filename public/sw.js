@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const RUNTIME_CACHE = `runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
@@ -9,8 +9,11 @@ const PRECACHE_URLS = [
   "/icons/icon-512.png",
 ];
 
-// Never cache auth, API, or other dynamic/sensitive routes.
-const NEVER_CACHE = [/\/api\//, /\/sign-in/, /\/sign-up/, /clerk/i];
+// Never cache auth, API, the authenticated dashboard, or other dynamic/sensitive
+// routes — dashboard pages are tenant- and user-specific, and this cache isn't
+// cleared on sign-out, so caching them risked a stale/previous user's data
+// being served on a shared device if the browser ever went offline.
+const NEVER_CACHE = [/\/api\//, /\/sign-in/, /\/sign-up/, /\/dashboard/, /clerk/i];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

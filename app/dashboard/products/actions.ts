@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentStore } from "@/lib/get-current-store";
@@ -11,7 +12,29 @@ import {
   GoogleMerchantValidationError,
 } from "@/lib/google-merchant";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
+import { validate, validateId } from "@/lib/validation";
 import type { Product, ProductCondition, ProductStatus, Store } from "@/lib/types";
+
+const productPayloadSchema = z.object({
+  name: z.string().trim().min(1, "Title is required").max(500),
+  slug: z.string().min(1).max(500),
+  short_description: z.string().trim().max(500).nullable(),
+  description: z.string().trim().max(10000).nullable(),
+  price: z.number().finite().min(0).nullable(),
+  sale_price: z.number().finite().min(0).nullable(),
+  currency: z.string().trim().length(3, "Currency must be a 3-letter code"),
+  sku: z.string().trim().max(200).nullable(),
+  stock_quantity: z.number().int().min(0),
+  status: z.enum(["draft", "active", "archived"]),
+  condition: z.enum(["new", "used", "refurbished"]),
+  brand: z.string().trim().max(200).nullable(),
+  mpn: z.string().trim().max(200).nullable(),
+  is_featured: z.boolean(),
+  badge: z.string().trim().max(100).nullable(),
+  category_id: z.string().uuid().nullable(),
+  images: z.array(z.string().trim().min(1).max(2000)).max(20, "Maximum 20 images"),
+  attributes: z.record(z.string(), z.string()),
+});
 
 function parseAttributes(formData: FormData): Record<string, string> {
   const keys = formData.getAll("attr_key") as string[];
@@ -32,13 +55,13 @@ function parseImages(formData: FormData): string[] {
 }
 
 function buildProductPayload(formData: FormData) {
-  const name = (formData.get("name") as string).trim();
+  const name = (formData.get("name") as string)?.trim() ?? "";
   const rawSlug = (formData.get("slug") as string)?.trim();
   const priceRaw = formData.get("price") as string;
   const salePriceRaw = formData.get("sale_price") as string;
   const categoryId = formData.get("category_id") as string;
 
-  return {
+  return validate(productPayloadSchema, {
     name,
     slug: slugify(rawSlug || name),
     short_description: (formData.get("short_description") as string) || null,
@@ -57,7 +80,7 @@ function buildProductPayload(formData: FormData) {
     category_id: categoryId || null,
     images: parseImages(formData),
     attributes: parseAttributes(formData),
-  };
+  });
 }
 
 export async function createProduct(formData: FormData) {
@@ -75,6 +98,7 @@ export async function createProduct(formData: FormData) {
 }
 
 export async function updateProduct(productId: string, formData: FormData) {
+  productId = validateId(productId);
   const store = await getCurrentStore();
   const payload = buildProductPayload(formData);
 
@@ -91,6 +115,7 @@ export async function updateProduct(productId: string, formData: FormData) {
 }
 
 export async function deleteProduct(productId: string) {
+  productId = validateId(productId);
   const store = await getCurrentStore();
 
   const { error } = await supabaseAdmin
@@ -175,6 +200,7 @@ async function syncSingleProduct(
 }
 
 export async function syncProductToGoogle(productId: string): Promise<SyncOutcome> {
+  productId = validateId(productId);
   const store = await getCurrentStore();
 
   const { data: product, error: fetchError } = await supabaseAdmin
@@ -200,25 +226,39 @@ export type BulkSyncResult = {
   error?: string;
 };
 
+// The Google service account credential is shared across every tenant on
+// the platform (see CLAUDE.md) — these bound how much of that shared quota
+// a single store's bulk sync click can consume in one run.
+const MAX_BULK_SYNC = 200;
+const BULK_SYNC_DELAY_MS = 150;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Syncs every product in the store, skipping (without calling Google) any
  * product the deterministic rules engine already knows will be rejected —
  * this avoids burning API calls on known-bad data and gives the user a
- * precise reason for every product that didn't end up synced.
+ * precise reason for every product that didn't end up synced. Capped and
+ * throttled (see constants above) since this hits a service account shared
+ * by every tenant, not just this store.
  */
 export async function syncAllProductsToGoogle(): Promise<BulkSyncResult[]> {
   const store = await getCurrentStore();
 
-  const { data: products, error } = await supabaseAdmin
+  const { data: allProducts, error } = await supabaseAdmin
     .from("products")
     .select("*")
-    .eq("store_id", store.id);
+    .eq("store_id", store.id)
+    .limit(MAX_BULK_SYNC);
 
-  if (error || !products) return [];
+  if (error || !allProducts) return [];
 
+  const products = allProducts as Product[];
   const results: BulkSyncResult[] = [];
 
-  for (const raw of products as Product[]) {
+  for (const raw of products) {
     const issues = checkProductForMerchant(raw, store);
     if (hasBlockingIssues(issues)) {
       const reason = issues
@@ -237,6 +277,7 @@ export async function syncAllProductsToGoogle(): Promise<BulkSyncResult[]> {
     }
 
     const outcome = await syncSingleProduct(store, raw);
+    await sleep(BULK_SYNC_DELAY_MS);
     results.push({
       productId: raw.id,
       name: raw.name,

@@ -1,11 +1,17 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { validate, validateId } from "@/lib/validation";
 import type { InquiryStatus } from "@/lib/types";
 
+const inquiryStatusSchema = z.enum(["open", "closed"]);
+
 export async function setInquiryStatus(inquiryId: string, status: InquiryStatus) {
+  inquiryId = validateId(inquiryId);
+  status = validate(inquiryStatusSchema, status);
   const store = await getCurrentStore();
 
   const { error } = await supabaseAdmin
@@ -20,6 +26,7 @@ export async function setInquiryStatus(inquiryId: string, status: InquiryStatus)
 }
 
 export async function deleteInquiry(inquiryId: string) {
+  inquiryId = validateId(inquiryId);
   const store = await getCurrentStore();
 
   const { error } = await supabaseAdmin
