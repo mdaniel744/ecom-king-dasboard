@@ -6,6 +6,7 @@ import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
+import { syncAttributeTranslations } from "@/lib/translation-sync";
 
 const attributeSchema = z.object({
   name: z.string().trim().min(1, "Attribute name is required").max(200, "Name is too long"),
@@ -29,13 +30,18 @@ export async function createAttribute(formData: FormData): Promise<ActionResult>
 
     if (error) throw error;
 
+    let savedValues: { id: string; value: string }[] = [];
     if (values.length) {
-      const { error: valuesError } = await supabaseAdmin
+      const { data: inserted, error: valuesError } = await supabaseAdmin
         .from("attribute_values")
-        .insert(values.map((value) => ({ attribute_id: attribute.id, value })));
+        .insert(values.map((value) => ({ attribute_id: attribute.id, value })))
+        .select("id, value");
 
       if (valuesError) throw valuesError;
+      savedValues = inserted ?? [];
     }
+
+    await syncAttributeTranslations(store, attribute.id, name, savedValues);
 
     revalidatePath("/dashboard/attributes");
     return ok();

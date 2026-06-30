@@ -18,7 +18,7 @@ export type Store = {
 export type Translation = {
   id: string;
   store_id: string;
-  entity_type: "product" | "category";
+  entity_type: "product" | "category" | "attribute_name" | "attribute_value";
   entity_id: string;
   field_name: string;
   locale: string;
