@@ -143,9 +143,7 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-            {CONTENT_LANGUAGE_OPTIONS.filter(
-              (option) => option.value !== store.google_content_language
-            ).map((option) => (
+            {CONTENT_LANGUAGE_OPTIONS.map((option) => (
               <label key={option.value} className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
