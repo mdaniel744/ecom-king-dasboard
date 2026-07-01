@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { AttributeDialog } from "@/app/dashboard/attributes/attribute-dialog";
 import { DeleteAttributeButton } from "@/app/dashboard/attributes/delete-attribute-button";
+import { AttributeValueEditDialog } from "@/app/dashboard/attributes/attribute-value-edit-dialog";
 import type { Attribute, AttributeValue } from "@/lib/types";
 
 export default async function AttributesPage() {
@@ -31,10 +32,10 @@ export default async function AttributesPage() {
         .in("attribute_id", attributeIds)
     : { data: [] as AttributeValue[] };
 
-  const valuesByAttribute = new Map<string, string[]>();
+  const valuesByAttribute = new Map<string, AttributeValue[]>();
   (values ?? []).forEach((v) => {
     const list = valuesByAttribute.get(v.attribute_id) ?? [];
-    list.push(v.value);
+    list.push(v as AttributeValue);
     valuesByAttribute.set(v.attribute_id, list);
   });
 
@@ -71,11 +72,17 @@ export default async function AttributesPage() {
               <TableRow key={attr.id}>
                 <TableCell className="font-medium">{attr.name}</TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(valuesByAttribute.get(attr.id) ?? []).map((value) => (
-                      <Badge key={value} variant="secondary">
-                        {value}
-                      </Badge>
+                  <div className="flex flex-wrap gap-2">
+                    {(valuesByAttribute.get(attr.id) ?? []).map((av) => (
+                      <div key={av.id} className="flex items-center gap-0.5">
+                        <Badge variant="secondary" className={av.image_url ? "border-primary/30" : ""}>
+                          {av.label ?? av.value}
+                        </Badge>
+                        <AttributeValueEditDialog
+                          attributeValue={av}
+                          attributeName={attr.name}
+                        />
+                      </div>
                     ))}
                   </div>
                 </TableCell>

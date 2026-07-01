@@ -64,6 +64,9 @@ export type AttributeValue = {
   id: string;
   attribute_id: string;
   value: string;
+  label: string | null;
+  image_url: string | null;
+  description: string | null;
   created_at: string;
 };
 

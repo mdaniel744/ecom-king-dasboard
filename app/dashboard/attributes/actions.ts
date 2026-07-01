@@ -6,11 +6,18 @@ import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
-import { syncAttributeTranslations } from "@/lib/translation-sync";
+import { syncAttributeTranslations, syncTranslations } from "@/lib/translation-sync";
 
 const attributeSchema = z.object({
   name: z.string().trim().min(1, "Attribute name is required").max(200, "Name is too long"),
   values: z.array(z.string().trim().min(1).max(200, "Each value must be under 200 characters")).max(200, "Maximum 200 values per attribute"),
+});
+
+const attributeValueSchema = z.object({
+  value: z.string().trim().min(1, "Value is required").max(200, "Value is too long"),
+  label: z.string().trim().max(300, "Label is too long").nullable(),
+  image_url: z.string().trim().max(2000, "Image URL is too long").nullable(),
+  description: z.string().trim().max(1000, "Description is too long").nullable(),
 });
 
 export async function createAttribute(formData: FormData): Promise<ActionResult> {
@@ -42,6 +49,67 @@ export async function createAttribute(formData: FormData): Promise<ActionResult>
     }
 
     await syncAttributeTranslations(store, attribute.id, name, savedValues);
+
+    revalidatePath("/dashboard/attributes");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+export async function updateAttributeValue(valueId: string, formData: FormData): Promise<ActionResult> {
+  try {
+    valueId = validateId(valueId);
+    const store = await getCurrentStore();
+
+    const fields = validate(attributeValueSchema, {
+      value: (formData.get("value") as string)?.trim() ?? "",
+      label: (formData.get("label") as string)?.trim() || null,
+      image_url: (formData.get("image_url") as string)?.trim() || null,
+      description: (formData.get("description") as string)?.trim() || null,
+    });
+
+    // Verify the value's parent attribute belongs to this store
+    const { data: av, error: fetchErr } = await supabaseAdmin
+      .from("attribute_values")
+      .select("id, attribute_id")
+      .eq("id", valueId)
+      .single();
+    if (fetchErr || !av) throw new Error("Value not found.");
+
+    const { data: attr, error: attrErr } = await supabaseAdmin
+      .from("attributes")
+      .select("id, name")
+      .eq("id", av.attribute_id)
+      .eq("store_id", store.id)
+      .maybeSingle();
+    if (attrErr || !attr) throw new Error("Attribute not found or not yours.");
+
+    const { error } = await supabaseAdmin
+      .from("attribute_values")
+      .update({
+        value: fields.value,
+        label: fields.label,
+        image_url: fields.image_url,
+        description: fields.description,
+      })
+      .eq("id", valueId);
+
+    if (error) throw error;
+
+    // Translate user-facing text into enabled locales.
+    // image_url is intentionally excluded — URLs are not language-specific.
+    await syncTranslations({
+      store,
+      entityType: "attribute_value",
+      entityId: valueId,
+      fields: {
+        value: fields.value,
+        label: fields.label,
+        description: fields.description,
+      },
+      categoryPath: attr.name,
+    });
 
     revalidatePath("/dashboard/attributes");
     return ok();
