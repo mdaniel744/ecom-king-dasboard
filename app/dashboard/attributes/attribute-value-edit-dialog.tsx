@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,20 +16,25 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
+import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import { updateAttributeValue } from "@/app/dashboard/attributes/actions";
 import type { AttributeValue } from "@/lib/types";
 
 export function AttributeValueEditDialog({
   attributeValue,
   attributeName,
+  storeSourceLocale = "en",
 }: {
   attributeValue: AttributeValue;
   attributeName: string;
+  storeSourceLocale?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+
+  const [avLabel, setAvLabel] = useState(attributeValue.label ?? "");
+  const [avDesc, setAvDesc] = useState(attributeValue.description ?? "");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -46,7 +51,6 @@ export function AttributeValueEditDialog({
         </DialogHeader>
         <ActionErrorBanner message={error} />
         <form
-          ref={formRef}
           action={(formData) => {
             setError(null);
             startTransition(async () => {
@@ -77,11 +81,15 @@ export function AttributeValueEditDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="label">Display Label</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="label">Display Label</Label>
+              <AIWriteButton getValue={() => avLabel} onResult={setAvLabel} fieldRole="label" defaultLocale={storeSourceLocale} />
+            </div>
             <Input
               id="label"
               name="label"
-              defaultValue={attributeValue.label ?? ""}
+              value={avLabel}
+              onChange={(e) => setAvLabel(e.target.value)}
               placeholder="e.g. 10 Fuß Container (shown to visitors, falls back to raw value if blank)"
             />
           </div>
@@ -97,12 +105,16 @@ export function AttributeValueEditDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="description">Card Description</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="description">Card Description</Label>
+              <AIWriteButton getValue={() => avDesc} onResult={setAvDesc} fieldRole="category_description" defaultLocale={storeSourceLocale} />
+            </div>
             <Textarea
               id="description"
               name="description"
               rows={3}
-              defaultValue={attributeValue.description ?? ""}
+              value={avDesc}
+              onChange={(e) => setAvDesc(e.target.value)}
               placeholder="Short text shown under the heading on the storefront card"
             />
           </div>

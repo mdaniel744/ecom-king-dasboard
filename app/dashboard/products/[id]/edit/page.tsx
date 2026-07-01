@@ -37,6 +37,7 @@ export default async function EditProductPage({
       product={product as Product}
       categories={(categories ?? []) as Category[]}
       attributeDefs={attributeDefs}
+      storeSourceLocale={store.google_content_language}
     />
   );
 }

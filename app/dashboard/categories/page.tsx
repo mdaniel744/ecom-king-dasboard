@@ -33,7 +33,7 @@ export default async function CategoriesPage() {
             Organize your products into categories
           </p>
         </div>
-        <CategoryDialog categories={categories} />
+        <CategoryDialog categories={categories} storeSourceLocale={store.google_content_language} />
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-border bg-card">
@@ -69,7 +69,7 @@ export default async function CategoriesPage() {
                 <TableCell className="text-muted-foreground">{cat.display_order}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <CategoryDialog categories={categories} category={cat} />
+                    <CategoryDialog categories={categories} category={cat} storeSourceLocale={store.google_content_language} />
                     <DeleteCategoryButton categoryId={cat.id} />
                   </div>
                 </TableCell>

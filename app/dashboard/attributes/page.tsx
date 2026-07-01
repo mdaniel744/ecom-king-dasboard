@@ -81,6 +81,7 @@ export default async function AttributesPage() {
                         <AttributeValueEditDialog
                           attributeValue={av}
                           attributeName={attr.name}
+                          storeSourceLocale={store.google_content_language}
                         />
                       </div>
                     ))}

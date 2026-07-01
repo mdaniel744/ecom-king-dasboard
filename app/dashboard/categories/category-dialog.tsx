@@ -23,21 +23,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
+import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import { createCategory, updateCategory } from "@/app/dashboard/categories/actions";
 import type { Category } from "@/lib/types";
 
 export function CategoryDialog({
   categories,
   category,
+  storeSourceLocale = "en",
 }: {
   categories: Category[];
   category?: Category;
+  storeSourceLocale?: string;
 }) {
   const isEdit = !!category;
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const [catName, setCatName] = useState(category?.name ?? "");
+  const [catDesc, setCatDesc] = useState(category?.description ?? "");
+  const [metaTitle, setMetaTitle] = useState(category?.meta_title ?? "");
+  const [metaDesc, setMetaDesc] = useState(category?.meta_description ?? "");
 
   const parentOptions = categories.filter((cat) => cat.id !== category?.id);
 
@@ -81,12 +89,16 @@ export function CategoryDialog({
           className="space-y-4"
         >
           <div className="space-y-1.5">
-            <Label htmlFor="name">Name *</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="name">Name *</Label>
+              <AIWriteButton getValue={() => catName} onResult={setCatName} fieldRole="name" defaultLocale={storeSourceLocale} />
+            </div>
             <Input
               id="name"
               name="name"
               required
-              defaultValue={category?.name}
+              value={catName}
+              onChange={(e) => setCatName(e.target.value)}
               placeholder="e.g. Containers"
             />
           </div>
@@ -125,12 +137,16 @@ export function CategoryDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="description">Description</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="description">Description</Label>
+              <AIWriteButton getValue={() => catDesc} onResult={setCatDesc} fieldRole="category_description" defaultLocale={storeSourceLocale} />
+            </div>
             <Textarea
               id="description"
               name="description"
               rows={3}
-              defaultValue={category?.description ?? ""}
+              value={catDesc}
+              onChange={(e) => setCatDesc(e.target.value)}
               placeholder="Short description shown on the storefront card"
             />
           </div>
@@ -160,22 +176,30 @@ export function CategoryDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="meta_title">SEO Title</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="meta_title">SEO Title</Label>
+              <AIWriteButton getValue={() => metaTitle} onResult={setMetaTitle} fieldRole="meta_title" defaultLocale={storeSourceLocale} />
+            </div>
             <Input
               id="meta_title"
               name="meta_title"
-              defaultValue={category?.meta_title ?? ""}
+              value={metaTitle}
+              onChange={(e) => setMetaTitle(e.target.value)}
               placeholder="Defaults to the category name if left blank"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="meta_description">SEO Description</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="meta_description">SEO Description</Label>
+              <AIWriteButton getValue={() => metaDesc} onResult={setMetaDesc} fieldRole="meta_description" defaultLocale={storeSourceLocale} />
+            </div>
             <Textarea
               id="meta_description"
               name="meta_description"
               rows={2}
-              defaultValue={category?.meta_description ?? ""}
+              value={metaDesc}
+              onChange={(e) => setMetaDesc(e.target.value)}
               placeholder="Shown in search engine results for this category's page"
             />
           </div>

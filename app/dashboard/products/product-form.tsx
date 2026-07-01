@@ -19,6 +19,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldError } from "@/components/dashboard/field-error";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
+import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import type { Category, Product } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
@@ -30,13 +31,18 @@ type Props = {
   product?: Product;
   categories: Category[];
   attributeDefs: AttributeDef[];
+  storeSourceLocale?: string;
 };
 
-export function ProductForm({ action, product, categories, attributeDefs }: Props) {
+export function ProductForm({ action, product, categories, attributeDefs, storeSourceLocale = "en" }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const [name, setName] = useState(product?.name ?? "");
+  const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
+  const [description, setDescription] = useState(product?.description ?? "");
 
   const initialAttrs = product?.attributes ? Object.entries(product.attributes) : [];
   const [attrs, setAttrs] = useState<[string, string][]>(
@@ -112,12 +118,16 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="name">Title *</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="name">Title *</Label>
+                  <AIWriteButton getValue={() => name} onResult={setName} fieldRole="name" defaultLocale={storeSourceLocale} />
+                </div>
                 <Input
                   id="name"
                   name="name"
                   required
-                  defaultValue={product?.name}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. 20ft High Cube Container"
                 />
                 <FieldError name="name" errors={fieldErrors} />
@@ -133,22 +143,30 @@ export function ProductForm({ action, product, categories, attributeDefs }: Prop
                 <FieldError name="slug" errors={fieldErrors} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="short_description">Short Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="short_description">Short Description</Label>
+                  <AIWriteButton getValue={() => shortDescription} onResult={setShortDescription} fieldRole="short_description" defaultLocale={storeSourceLocale} />
+                </div>
                 <Input
                   id="short_description"
                   name="short_description"
-                  defaultValue={product?.short_description ?? ""}
+                  value={shortDescription}
+                  onChange={(e) => setShortDescription(e.target.value)}
                   placeholder="Brief summary shown on product cards"
                 />
                 <FieldError name="short_description" errors={fieldErrors} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="description">Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="description">Description</Label>
+                  <AIWriteButton getValue={() => description} onResult={setDescription} fieldRole="description" defaultLocale={storeSourceLocale} />
+                </div>
                 <Textarea
                   id="description"
                   name="description"
                   rows={5}
-                  defaultValue={product?.description ?? ""}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   placeholder="Full product description..."
                 />
                 <FieldError name="description" errors={fieldErrors} />

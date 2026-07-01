@@ -17,6 +17,7 @@ export default async function NewProductPage() {
       action={createProduct}
       categories={(categories ?? []) as Category[]}
       attributeDefs={attributeDefs}
+      storeSourceLocale={store.google_content_language}
     />
   );
 }
