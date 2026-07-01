@@ -3,53 +3,109 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>You're offline</title>
+    <title>No connection — Ecom King</title>
     <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
-        margin: 0;
         min-height: 100vh;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #faf6ec;
-        color: #2b2118;
+        background: #f5f0ff;
         font-family: system-ui, -apple-system, sans-serif;
-        text-align: center;
-        padding: 2rem;
-        box-sizing: border-box;
+        padding: 1.5rem;
+        color: #1a1a2e;
       }
       .card {
-        max-width: 360px;
+        background: white;
+        border-radius: 1rem;
+        padding: 2.5rem 2rem;
+        max-width: 400px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 4px 24px rgba(117,46,184,0.10);
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        background: #f0e8ff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+      }
+      .icon svg {
+        width: 32px;
+        height: 32px;
+        stroke: #752eb8;
       }
       h1 {
-        font-size: 1.25rem;
-        margin-bottom: 0.5rem;
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 0.6rem;
+        color: #1a1a2e;
       }
       p {
-        color: #6b5d4f;
+        color: #6b7280;
         font-size: 0.9rem;
+        line-height: 1.6;
+        margin-bottom: 1.5rem;
+      }
+      .tip {
+        background: #f5f0ff;
+        border: 1px solid #e0d0f8;
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        font-size: 0.82rem;
+        color: #752eb8;
+        margin-bottom: 1.5rem;
         line-height: 1.5;
       }
       button {
-        margin-top: 1.25rem;
-        background: #d97706;
+        background: #752eb8;
         color: white;
         border: none;
-        padding: 0.6rem 1.25rem;
+        padding: 0.7rem 1.75rem;
         border-radius: 0.5rem;
         font-weight: 600;
+        font-size: 0.95rem;
         cursor: pointer;
+        width: 100%;
+        transition: background 0.15s;
+      }
+      button:hover { background: #5e2494; }
+      .brand {
+        margin-top: 2rem;
+        font-size: 0.78rem;
+        color: #9ca3af;
+        letter-spacing: 0.02em;
       }
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>You're offline</h1>
+      <div class="icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="1" y1="1" x2="23" y2="23"/>
+          <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+          <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+          <path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
+          <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+          <line x1="12" y1="20" x2="12.01" y2="20"/>
+        </svg>
+      </div>
+      <h1>No internet connection</h1>
       <p>
-        This page hasn't been loaded before, so it isn't available without an
-        internet connection. Pages you've already visited will still work.
+        You're offline. Pages you've already visited are still available —
+        only this page hasn't been loaded before.
       </p>
+      <div class="tip">
+        💡 Install Ecom King on your home screen for faster access even on slow connections.
+      </div>
       <button onclick="location.reload()">Try again</button>
+      <p class="brand">Ecom King Dashboard</p>
     </div>
   </body>
 </html>
