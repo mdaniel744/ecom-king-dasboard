@@ -26,14 +26,16 @@ export default async function CategoriesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Categories</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Organize your products into categories
           </p>
         </div>
-        <CategoryDialog categories={categories} storeSourceLocale={store.google_content_language} />
+        <div className="shrink-0">
+          <CategoryDialog categories={categories} storeSourceLocale={store.google_content_language} />
+        </div>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-border bg-card">
@@ -41,10 +43,10 @@ export default async function CategoriesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Slug</TableHead>
-              <TableHead>Parent</TableHead>
-              <TableHead>Featured</TableHead>
-              <TableHead>Order</TableHead>
+              <TableHead className="hidden sm:table-cell">Slug</TableHead>
+              <TableHead className="hidden md:table-cell">Parent</TableHead>
+              <TableHead className="hidden sm:table-cell">Featured</TableHead>
+              <TableHead className="hidden md:table-cell">Order</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -59,14 +61,14 @@ export default async function CategoriesPage() {
             {categories.map((cat) => (
               <TableRow key={cat.id}>
                 <TableCell className="font-medium">{cat.name}</TableCell>
-                <TableCell className="text-muted-foreground">{cat.slug}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="hidden sm:table-cell text-muted-foreground">{cat.slug}</TableCell>
+                <TableCell className="hidden md:table-cell text-muted-foreground">
                   {cat.parent_id ? nameById.get(cat.parent_id) ?? "—" : "—"}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="hidden sm:table-cell text-muted-foreground">
                   {cat.is_featured ? "Yes" : "—"}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{cat.display_order}</TableCell>
+                <TableCell className="hidden md:table-cell text-muted-foreground">{cat.display_order}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <CategoryDialog categories={categories} category={cat} storeSourceLocale={store.google_content_language} />

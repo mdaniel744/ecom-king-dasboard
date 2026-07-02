@@ -33,14 +33,14 @@ export default async function ProductsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Products</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Manage your store&apos;s products
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <BulkSyncButton disabled={storeIssues.length > 0} />
           <Button asChild>
             <Link href="/dashboard/products/new">
@@ -61,10 +61,10 @@ export default async function ProductsPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Price</TableHead>
-              <TableHead>Stock</TableHead>
+              <TableHead className="hidden sm:table-cell">Stock</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Google</TableHead>
-              <TableHead>Merchant Readiness</TableHead>
+              <TableHead className="hidden md:table-cell">Google</TableHead>
+              <TableHead className="hidden md:table-cell">Merchant Readiness</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -82,16 +82,16 @@ export default async function ProductsPage() {
                 <TableCell>
                   {product.price != null ? `${product.currency} ${product.price}` : "—"}
                 </TableCell>
-                <TableCell>{product.stock_quantity}</TableCell>
+                <TableCell className="hidden sm:table-cell">{product.stock_quantity}</TableCell>
                 <TableCell>
                   <Badge variant={product.status === "active" ? "default" : "secondary"}>
                     {product.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <Badge variant="outline">{product.google_sync_status}</Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <ReadinessBadge issues={checkProductForMerchant(product, store)} />
                 </TableCell>
                 <TableCell className="text-right">

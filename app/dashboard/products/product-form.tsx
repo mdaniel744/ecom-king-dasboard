@@ -90,18 +90,18 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
   return (
     <form action={handleSubmit}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button asChild variant="ghost" size="icon" className="shrink-0">
             <Link href="/dashboard/products">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold">
+          <h1 className="truncate text-2xl font-semibold">
             {product ? "Edit Product" : "New Product"}
           </h1>
         </div>
-        <Button type="submit" disabled={isPending}>
+        <Button type="submit" disabled={isPending} className="shrink-0">
           {isPending ? "Saving..." : "Save"}
         </Button>
       </div>

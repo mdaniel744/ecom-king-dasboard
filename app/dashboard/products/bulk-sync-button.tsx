@@ -29,7 +29,9 @@ export function BulkSyncButton({ disabled }: { disabled?: boolean }) {
         }}
       >
         <RefreshCw className={`mr-2 h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
-        {isPending ? "Syncing..." : "Sync All to Google"}
+        {isPending ? "Syncing…" : (
+          <><span className="sm:hidden">Sync</span><span className="hidden sm:inline">Sync All to Google</span></>
+        )}
       </Button>
 
       <Dialog open={results !== null} onOpenChange={(open) => !open && setResults(null)}>

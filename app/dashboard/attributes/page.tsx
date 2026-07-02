@@ -41,14 +41,16 @@ export default async function AttributesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Attributes</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Define custom product attributes like size, material, or color
           </p>
         </div>
-        <AttributeDialog />
+        <div className="shrink-0">
+          <AttributeDialog />
+        </div>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-border bg-card">
