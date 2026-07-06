@@ -41,7 +41,11 @@ function getServiceAccountCredentials(): { client_email: string; private_key: st
   }
 
   try {
-    const parsed = JSON.parse(raw);
+    // Accept either raw JSON or base64-encoded JSON (base64 is safer for hosting env vars)
+    const decoded = raw.trimStart().startsWith("{")
+      ? raw
+      : Buffer.from(raw.trim(), "base64").toString("utf8");
+    const parsed = JSON.parse(decoded);
     if (!parsed.client_email || !parsed.private_key) {
       throw new Error("missing client_email or private_key");
     }
