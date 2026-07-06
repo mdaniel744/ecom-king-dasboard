@@ -146,6 +146,7 @@ export async function upsertGoogleProduct(
     url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs:insert?dataSource=${encodeURIComponent(dataSource)}`,
     method: "POST",
     data: body,
+    timeout: 25000,
   });
 
   return res.data as { name: string };
@@ -161,5 +162,6 @@ export async function deleteGoogleProduct(store: Store, productId: string) {
   await client.request({
     url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs/${productInputName}?dataSource=${encodeURIComponent(dataSource)}`,
     method: "DELETE",
+    timeout: 25000,
   });
 }
