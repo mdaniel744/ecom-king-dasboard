@@ -223,7 +223,7 @@ async function syncSingleProduct(
     const message =
       err instanceof GoogleMerchantConfigError || err instanceof GoogleMerchantValidationError
         ? err.message
-        : "Failed to sync with Google Merchant. Check the product data and try again.";
+        : `Google Merchant sync failed: ${err instanceof Error ? err.message : String(err)}`;
 
     await supabaseAdmin
       .from("products")
