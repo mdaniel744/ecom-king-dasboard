@@ -35,6 +35,7 @@ const productPayloadSchema = z.object({
   badge: z.string().trim().max(100, "Badge text is too long (max 100 characters)").nullable(),
   category_id: z.string().uuid("Choose a valid category").nullable(),
   images: z.array(z.string().trim().min(1).max(2000)).max(20, "Maximum 20 images"),
+  image_alts: z.array(z.string().trim().max(500)).max(20),
   attributes: z.record(z.string(), z.string()),
 });
 
@@ -54,6 +55,10 @@ function parseImages(formData: FormData): string[] {
   return (formData.getAll("images") as string[])
     .map((url) => url.trim())
     .filter(Boolean);
+}
+
+function parseImageAlts(formData: FormData): string[] {
+  return (formData.getAll("image_alts") as string[]).map((s) => s.trim());
 }
 
 function buildProductPayload(formData: FormData) {
@@ -82,6 +87,7 @@ function buildProductPayload(formData: FormData) {
     badge: (formData.get("badge") as string)?.trim() || null,
     category_id: categoryId || null,
     images: parseImages(formData),
+    image_alts: parseImageAlts(formData),
     attributes: parseAttributes(formData),
   });
 }

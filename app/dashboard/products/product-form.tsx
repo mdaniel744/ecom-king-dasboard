@@ -28,6 +28,7 @@ import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
+import { generateImageAlt } from "./generate-alt-action";
 import { slugify } from "@/lib/slug";
 
 type Props = {
@@ -65,6 +66,10 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   const [images, setImages] = useState<string[]>(
     product?.images?.length ? product.images : [""]
   );
+  const [imageAlts, setImageAlts] = useState<string[]>(
+    product?.image_alts?.length ? product.image_alts : [""]
+  );
+  const [generatingAltIndex, setGeneratingAltIndex] = useState<number | null>(null);
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -108,6 +113,32 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
   function updateImage(index: number, newValue: string) {
     setImages((prev) => prev.map((url, i) => (i === index ? newValue : url)));
+  }
+
+  function updateImageAlt(index: number, newValue: string) {
+    setImageAlts((prev) => {
+      const next = [...prev];
+      next[index] = newValue;
+      return next;
+    });
+  }
+
+  async function handleGenerateAlt(index: number) {
+    if (!name) {
+      toast.error("Fill in the product title first so the AI has something to work with.");
+      return;
+    }
+    setGeneratingAltIndex(index);
+    try {
+      const result = await generateImageAlt(name, description || null, brand || null, index);
+      if (result.alt) {
+        updateImageAlt(index, result.alt);
+      } else {
+        toast.error(result.error ?? "Could not generate alt text.");
+      }
+    } finally {
+      setGeneratingAltIndex(null);
+    }
   }
 
   function updateAttr(index: number, field: 0 | 1, newValue: string) {
@@ -348,39 +379,75 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               <div className="flex items-center gap-1.5">
                 <CardTitle className="text-base">Images</CardTitle>
                 <FieldInfo
-                  title="Product Images"
-                  description="Photos of your product. The first image is the main one shown in listings and sent to Google as the primary image. Google requires at least one image and recommends a white or neutral background. Minimum 100×100 pixels; 800×800 or larger recommended. Paste a hosted URL — e.g. from ImageKit, Cloudinary, or your media library."
+                  title="Product Images & Alt Text"
+                  description="Photos of your product. The first image is the main one sent to Google as the primary image. Paste a hosted URL per box (e.g. from ImageKit). Each image has an alt text field — this is the written description Google reads when crawling your site and is one of the strongest image SEO signals. Use Generate to auto-fill it from your product details, or write your own. Tip: name your files descriptively in ImageKit before uploading (e.g. 20ft-container-front.webp) for even stronger SEO."
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                First image is the main one. Paste a hosted URL per box —
-                e.g. from ImageKit or any other image host.
+                First image is the main one. Add alt text to every image for Google image SEO.
               </p>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
               {images.map((url, i) => (
-                <div key={i} className="flex gap-2">
-                  <Input
-                    name="images"
-                    value={url}
-                    onChange={(e) => updateImage(i, e.target.value)}
-                    placeholder="https://..."
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setImages(images.filter((_, idx) => idx !== i))}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                <div key={i} className="space-y-1.5">
+                  <div className="flex gap-2">
+                    <Input
+                      name="images"
+                      value={url}
+                      onChange={(e) => updateImage(i, e.target.value)}
+                      placeholder="https://..."
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setImages(images.filter((_, idx) => idx !== i));
+                        setImageAlts(imageAlts.filter((_, idx) => idx !== i));
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-2 items-start">
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">Alt text</span>
+                        <FieldInfo
+                          title="Image Alt Text"
+                          description="A short written description of what this image shows — Google reads it when crawling your site and uses it to rank your images in search. Write what's visible: the product name, key features, colour, and angle. E.g. 'Anthrazit grey 20ft High Cube shipping container, front view'. Avoid generic text like 'product image'. The Generate button fills this automatically from your product details — always review for accuracy."
+                        />
+                      </div>
+                      <Input
+                        name="image_alts"
+                        value={imageAlts[i] ?? ""}
+                        onChange={(e) => updateImageAlt(i, e.target.value)}
+                        placeholder={i === 0 ? "e.g. Anthrazit grey 20ft container, front view" : "e.g. Container interior, side door open"}
+                        className="text-sm"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleGenerateAlt(i)}
+                      disabled={generatingAltIndex === i}
+                      className="mt-5 h-8 gap-1.5 text-xs shrink-0"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      {generatingAltIndex === i ? "..." : "Generate"}
+                    </Button>
+                  </div>
                 </div>
               ))}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setImages([...images, ""])}
+                onClick={() => {
+                  setImages([...images, ""]);
+                  setImageAlts([...imageAlts, ""]);
+                }}
               >
                 <Plus className="mr-2 h-3.5 w-3.5" />
                 Add image

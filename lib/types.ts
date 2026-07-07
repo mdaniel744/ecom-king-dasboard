@@ -89,6 +89,7 @@ export type Product = {
   stock_quantity: number;
   status: ProductStatus;
   images: string[];
+  image_alts: string[];
   attributes: Record<string, string>;
   brand: string | null;
   gtin: string | null;
