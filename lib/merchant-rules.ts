@@ -91,7 +91,24 @@ export function checkStoreMerchantConfig(store: Store): RuleIssue[] {
  * https://support.google.com/merchants/answer/7052112
  */
 export function checkProductForMerchant(product: Product, store: Store): RuleIssue[] {
-  const issues: RuleIssue[] = [...checkStoreMerchantConfig(store)];
+  const storeIssues = checkStoreMerchantConfig(store);
+
+  if (product.status !== "active") {
+    return [
+      ...storeIssues,
+      {
+        field: "status",
+        code: "not_active",
+        message:
+          product.status === "draft"
+            ? "Status is Draft — set to Active before syncing. Google only shows products that are ready to sell."
+            : "Status is Archived — this product is off sale. Reactivate it to Active if you want to sync it again.",
+        severity: "error",
+      },
+    ];
+  }
+
+  const issues: RuleIssue[] = [...storeIssues];
 
   if (!product.name?.trim()) {
     issues.push({

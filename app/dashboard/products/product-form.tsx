@@ -66,6 +66,30 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   function handleSubmit(formData: FormData) {
     setError(null);
     setFieldErrors({});
+
+    const statusVal = formData.get("status") as string;
+    const priceVal = (formData.get("price") as string)?.trim();
+    const filledImages = images.filter((url) => url.trim());
+
+    if (!name.trim()) {
+      toast.error("Product title is required — it's how Google and your customers identify this product. Add a name before saving.");
+      return;
+    }
+
+    if (statusVal === "active") {
+      if (!priceVal || Number(priceVal) <= 0) {
+        toast.error("Active products need a valid price — Google rejects any product without one. Add a price or save as Draft until it's ready.");
+        return;
+      }
+      if (filledImages.length === 0) {
+        toast.error("Active products need at least one image — Google won't display a product without a photo. Add an image URL or save as Draft first.");
+        return;
+      }
+      if (!description.trim()) {
+        toast.warning("No description yet — Google uses it to match your product to search queries. You can save now, but add one before syncing for best results.");
+      }
+    }
+
     startTransition(async () => {
       const result = await action(formData);
       if (result.success) {
@@ -191,7 +215,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="slug">URL Slug</Label>
+                  <Label htmlFor="slug">URL Slug <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="URL Slug"
                     description="The web-address-friendly version of your product name — it becomes part of the product page URL (e.g. /products/20ft-high-cube-container). Auto-generated from the title if left blank. Use only letters, numbers, and hyphens."
@@ -209,7 +233,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="short_description">Short Description</Label>
+                    <Label htmlFor="short_description">Short Description <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                     <FieldInfo
                       title="Short Description"
                       description="A brief 1–2 sentence summary shown on product cards and listings on your storefront. Not sent to Google — this is for your customers browsing your site. Keep it punchy and highlight the key benefit."
@@ -230,7 +254,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="description">Description</Label>
+                    <Label htmlFor="description">Description <span className="text-xs font-normal text-muted-foreground">(recommended for Google)</span></Label>
                     <FieldInfo
                       title="Product Description"
                       description="The full product description shown on the product detail page and sent to Google Shopping. Be detailed and accurate — include materials, dimensions, certifications, and use cases. Google uses this to match your product to search queries. Minimum 20 characters for Google approval."
@@ -406,7 +430,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="sale_price">Sale Price</Label>
+                  <Label htmlFor="sale_price">Sale Price <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="Sale Price (optional)"
                     description="A discounted price shown alongside the regular price on Google Shopping — Google displays the original price with a strikethrough and highlights the saving. Must be lower than the regular price. Leave blank if the product is not currently on sale."
@@ -465,7 +489,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="badge">Badge</Label>
+                  <Label htmlFor="badge">Badge <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="Badge (optional)"
                     description="A short promotional label shown on the product card on your storefront — e.g. 'Bestseller', 'New Arrival', 'Limited Stock'. Not sent to Google. Keep it under 20 characters so it fits neatly on the card."
@@ -499,7 +523,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="category_id">Category</Label>
+                  <Label htmlFor="category_id">Category <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="Store Category"
                     description="Your own internal category for organising products in your store. Also used to build the product type breadcrumb sent to Google (e.g. 'Containers > Open Side'). Manage your categories from the Categories page in the sidebar."
@@ -525,7 +549,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="stock_quantity">Stock Quantity</Label>
+                  <Label htmlFor="stock_quantity">Stock Quantity <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="Stock Quantity"
                     description="The number of units you have available. Used for internal inventory tracking. A product with status Active is shown as 'In Stock' on Google regardless of this number — update the status to Archived to mark it unavailable."
@@ -542,7 +566,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="sku">SKU</Label>
+                  <Label htmlFor="sku">SKU <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="SKU (Stock Keeping Unit)"
                     description="Your internal product code for inventory management — e.g. a warehouse reference or supplier code. Not shown to customers and not sent to Google. Completely optional and for your own records only."
@@ -561,7 +585,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="brand">Brand</Label>
+                  <Label htmlFor="brand">Brand <span className="text-xs font-normal text-muted-foreground">(optional, recommended for Google)</span></Label>
                   <FieldInfo
                     title="Brand"
                     description="The manufacturer or brand name of the product. Used by Google to identify and match your product in search results. If you made the product yourself, use your company name. Required together with MPN to count as a verified product identifier."
@@ -574,7 +598,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="mpn">MPN</Label>
+                    <Label htmlFor="mpn">MPN <span className="text-xs font-normal text-muted-foreground">(optional, recommended for Google)</span></Label>
                     <FieldInfo
                       title="MPN (Manufacturer Part Number)"
                       description="A unique code identifying this exact product model — no fixed length, typically a few characters up to 70 (letters, numbers, hyphens). Google pairs Brand + MPN to match your listing to the same product sold by other sellers, grouping them in Shopping so buyers can compare price and seller. Use Generate to auto-create one — AI-generated with a unique suffix so it never clashes with another product. You can edit it at any time, but always keep it unique across your products. Needs Brand filled in too to count as a valid identifier with Google."
@@ -608,7 +632,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="google_product_category">Google Product Category</Label>
+                    <Label htmlFor="google_product_category">Google Product Category <span className="text-xs font-normal text-muted-foreground">(optional, recommended for Google)</span></Label>
                     <FieldInfo
                       title="Google Product Category"
                       description="Google's own official category path for your product, taken from their public taxonomy list. This tells Google exactly where to place your product in Shopping — wrong or missing categories reduce ad relevance and reach. Use the AI suggest button to auto-fill, or look up your category manually."
