@@ -415,7 +415,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                         <span className="text-xs text-muted-foreground">Alt text</span>
                         <FieldInfo
                           title="Image Alt Text"
-                          description="A short written description of what this image shows — Google reads it when crawling your site and uses it to rank your images in search. Write what's visible: the product name, key features, colour, and angle. E.g. 'Anthrazit grey 20ft High Cube shipping container, front view'. Avoid generic text like 'product image'. The Generate button fills this automatically from your product details — always review for accuracy."
+                          description="A short written description of what this image shows — Google reads it when crawling your site and uses it to rank your images in search. Write what's visible: the product name, key features, colour, and angle. E.g. 'Anthrazit grey 20ft High Cube shipping container, front view'. Avoid generic text like 'product image'. The Generate button writes this for you using your product title, description, brand, and whether this is the main or an additional image — the more complete those fields are, the more accurate the result. Since the AI cannot see the actual photo, always review what it writes and adjust to match what the image actually shows. Use Generate on every image."
                         />
                       </div>
                       <Input
