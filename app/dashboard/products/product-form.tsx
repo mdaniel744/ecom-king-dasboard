@@ -27,6 +27,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { suggestGoogleCategory } from "./suggest-category-action";
+import { generateMpn } from "./generate-mpn-action";
 
 type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
@@ -45,6 +46,9 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   const [name, setName] = useState(product?.name ?? "");
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
+  const [brand, setBrand] = useState(product?.brand ?? "");
+  const [mpn, setMpn] = useState(product?.mpn ?? "");
+  const [isGeneratingMpn, setIsGeneratingMpn] = useState(false);
   const [googleProductCategory, setGoogleProductCategory] = useState(product?.google_product_category ?? "");
   const [isSuggestingCategory, setIsSuggestingCategory] = useState(false);
 
@@ -92,6 +96,26 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
       (def) => def.name.trim().toLowerCase() === key.trim().toLowerCase()
     );
     return match?.values ?? [];
+  }
+
+  async function handleGenerateMpn() {
+    if (!name) {
+      toast.error("Fill in the product title first so the AI has something to work with.");
+      return;
+    }
+    setIsGeneratingMpn(true);
+    try {
+      const categoryName = categories.find((c) => c.id === selectedCategoryId)?.name ?? null;
+      const result = await generateMpn(name, brand || null, categoryName);
+      if (result.mpn) {
+        setMpn(result.mpn);
+        toast.success("MPN generated — review and save.");
+      } else {
+        toast.error(result.error ?? "Could not generate MPN.");
+      }
+    } finally {
+      setIsGeneratingMpn(false);
+    }
   }
 
   async function handleSuggestCategory() {
@@ -543,19 +567,38 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                     description="The manufacturer or brand name of the product. Used by Google to identify and match your product in search results. If you made the product yourself, use your company name. Required together with MPN to count as a verified product identifier."
                   />
                 </div>
-                <Input id="brand" name="brand" defaultValue={product?.brand ?? ""} />
+                <Input id="brand" name="brand" value={brand} onChange={(e) => setBrand(e.target.value)} />
                 <FieldError name="brand" errors={fieldErrors} />
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="mpn">MPN</Label>
-                  <FieldInfo
-                    title="MPN (Manufacturer Part Number)"
-                    description="A unique code the manufacturer uses to identify this exact product model — no fixed length, typically a few characters up to 70 (letters, numbers, hyphens). Find it on the product label, spec sheet, or supplier invoice. Google uses Brand + MPN together to match your listing to the same product sold by other sellers, grouping them in Shopping results so buyers can compare price and seller. For unique or industrial products where you're likely the only seller, MPN's main job is simply to give Google a verified identity for the product — improving your ad eligibility and feed quality score."
-                  />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="mpn">MPN</Label>
+                    <FieldInfo
+                      title="MPN (Manufacturer Part Number)"
+                      description="A unique code identifying this exact product model — no fixed length, typically a few characters up to 70 (letters, numbers, hyphens). Google pairs Brand + MPN to match your listing to the same product sold by other sellers, grouping them in Shopping so buyers can compare price and seller. Use Generate to auto-create one — AI-generated with a unique suffix so it never clashes with another product. You can edit it at any time, but always keep it unique across your products. Needs Brand filled in too to count as a valid identifier with Google."
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleGenerateMpn}
+                    disabled={isGeneratingMpn}
+                    className="h-7 gap-1.5 text-xs"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    {isGeneratingMpn ? "Generating..." : "Generate"}
+                  </Button>
                 </div>
-                <Input id="mpn" name="mpn" defaultValue={product?.mpn ?? ""} />
+                <Input
+                  id="mpn"
+                  name="mpn"
+                  value={mpn}
+                  onChange={(e) => setMpn(e.target.value)}
+                  placeholder="Auto-generate or enter manually"
+                />
                 <FieldError name="mpn" errors={fieldErrors} />
                 <p className="text-xs text-muted-foreground">
                   Needs Brand filled in too to count as a valid identifier with Google.
