@@ -1,18 +1,15 @@
+import { auth } from "@clerk/nextjs/server";
 import { getCurrentStore } from "@/lib/get-current-store";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { getTeamMembers } from "@/app/dashboard/settings/team-actions";
 import { TeamSection } from "@/app/dashboard/settings/team-section";
 import { SettingsForm } from "@/app/dashboard/settings/settings-form";
 
 export default async function SettingsPage() {
-  const [supabase, store, members] = await Promise.all([
-    createSupabaseServerClient(),
+  const [{ userId }, store, members] = await Promise.all([
+    auth(),
     getCurrentStore(),
     getTeamMembers(),
   ]);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   return (
     <div>
@@ -26,7 +23,7 @@ export default async function SettingsPage() {
       <div className="mt-6 max-w-xl">
         <TeamSection
           members={members}
-          isCurrentUserOwner={user?.id === store.owner_user_id}
+          isCurrentUserOwner={userId === store.owner_user_id}
         />
       </div>
     </div>

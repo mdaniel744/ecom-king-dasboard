@@ -1,10 +1,7 @@
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 export default async function Home() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  redirect(user ? "/dashboard" : "/sign-in");
+  const { userId } = await auth();
+  redirect(userId ? "/dashboard" : "/sign-in");
 }

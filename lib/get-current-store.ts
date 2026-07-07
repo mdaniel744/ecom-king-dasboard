@@ -1,22 +1,19 @@
 import "server-only";
 import { cache } from "react";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { randomUUID } from "crypto";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Store } from "@/lib/types";
 
 export const getCurrentStore = cache(async (): Promise<Store> => {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
 
   const { data: membership, error: membershipError } = await supabaseAdmin
     .from("store_members")
     .select("store_id, stores(*)")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
 
@@ -34,7 +31,7 @@ export const getCurrentStore = cache(async (): Promise<Store> => {
   const { error: upsertError } = await supabaseAdmin
     .from("stores")
     .upsert(
-      { name: storeName, slug, owner_user_id: user.id },
+      { name: storeName, slug, owner_user_id: userId },
       { onConflict: "owner_user_id", ignoreDuplicates: true }
     );
 
@@ -45,7 +42,7 @@ export const getCurrentStore = cache(async (): Promise<Store> => {
   const { data: store, error: storeError } = await supabaseAdmin
     .from("stores")
     .select("*")
-    .eq("owner_user_id", user.id)
+    .eq("owner_user_id", userId)
     .single();
 
   if (storeError || !store) {
@@ -55,7 +52,7 @@ export const getCurrentStore = cache(async (): Promise<Store> => {
   const { error: memberError } = await supabaseAdmin
     .from("store_members")
     .upsert(
-      { store_id: store.id, user_id: user.id, role: "owner" },
+      { store_id: store.id, user_id: userId, role: "owner" },
       { onConflict: "store_id,user_id", ignoreDuplicates: true }
     );
 

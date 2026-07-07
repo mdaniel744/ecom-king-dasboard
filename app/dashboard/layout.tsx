@@ -1,22 +1,15 @@
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { BrandMark } from "@/components/dashboard/brand-mark";
 import { MobileSidebar } from "@/components/dashboard/mobile-sidebar";
-import { UserButton } from "@/components/dashboard/user-button";
+import { UserButton } from "@clerk/nextjs";
 import { getCurrentStore } from "@/lib/get-current-store";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [store, supabase] = await Promise.all([
-    getCurrentStore(),
-    createSupabaseServerClient(),
-  ]);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const store = await getCurrentStore();
 
   return (
     <div className="min-h-screen bg-background">
@@ -34,7 +27,7 @@ export default async function DashboardLayout({
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-border bg-card px-4 md:ml-64">
         <MobileSidebar storeName={store.name} />
         <div className="flex-1" />
-        <UserButton email={user?.email ?? ""} />
+        <UserButton />
       </header>
 
       {/* Main content */}

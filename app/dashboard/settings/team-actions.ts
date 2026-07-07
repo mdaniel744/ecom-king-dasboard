@@ -2,10 +2,10 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { getCurrentStore } from "@/lib/get-current-store";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { validate, validateId } from "@/lib/validation";
+import { validate, validateClerkId } from "@/lib/validation";
 import type { StoreMemberRole } from "@/lib/types";
 
 const inviteSchema = z.object({
@@ -31,18 +31,18 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 
   if (error || !members?.length) return [];
 
+  const client = await clerkClient();
   const userResults = await Promise.allSettled(
-    members.map((m) => supabaseAdmin.auth.admin.getUserById(m.user_id))
+    members.map((m) => client.users.getUser(m.user_id))
   );
 
   return members.map((member, i) => {
     const result = userResults[i];
-    const user =
-      result.status === "fulfilled" ? result.value.data.user : null;
+    const user = result.status === "fulfilled" ? result.value : null;
     return {
       userId: member.user_id,
-      email: user?.email ?? "(unknown)",
-      name: (user?.user_metadata?.full_name as string) ?? null,
+      email: user?.emailAddresses?.[0]?.emailAddress ?? "(unknown)",
+      name: user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || null : null,
       role: member.role as StoreMemberRole,
       isOwner: member.user_id === store.owner_user_id,
     };
@@ -52,14 +52,12 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 type InviteResult = { success: boolean; error?: string };
 
 export async function inviteTeammate(formData: FormData): Promise<InviteResult> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user: currentUser },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
+  if (!userId) return { success: false, error: "Not authenticated." };
 
   const store = await getCurrentStore();
 
-  if (currentUser?.id !== store.owner_user_id) {
+  if (userId !== store.owner_user_id) {
     return { success: false, error: "Only the store owner can invite teammates." };
   }
 
@@ -72,28 +70,17 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
   }
   const { email, role } = parsed.data;
 
-  // Find existing Supabase auth user by email
-  const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({
-    perPage: 1000,
-  });
-  const existingUser = usersData?.users?.find((u) => u.email === email);
+  const client = await clerkClient();
+  const { data: clerkUsers } = await client.users.getUserList({ emailAddress: [email] });
 
-  let invitedUserId: string;
-
-  if (existingUser) {
-    invitedUserId = existingUser.id;
-  } else {
-    // Create and email an invite link — they set their own password
-    const { data: inviteData, error: inviteError } =
-      await supabaseAdmin.auth.admin.inviteUserByEmail(email);
-    if (inviteError || !inviteData.user) {
-      return {
-        success: false,
-        error: inviteError?.message ?? "Failed to send invite.",
-      };
-    }
-    invitedUserId = inviteData.user.id;
+  if (!clerkUsers.length) {
+    return {
+      success: false,
+      error: "No Clerk account found for that email. Create their account in the Clerk dashboard first, then invite.",
+    };
   }
+
+  const invitedUserId = clerkUsers[0].id;
 
   const { data: existingMembership } = await supabaseAdmin
     .from("store_members")
@@ -124,16 +111,14 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
 }
 
 export async function removeTeammate(targetUserId: string): Promise<InviteResult> {
-  targetUserId = validateId(targetUserId);
+  targetUserId = validateClerkId(targetUserId);
 
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user: currentUser },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
+  if (!userId) return { success: false, error: "Not authenticated." };
 
   const store = await getCurrentStore();
 
-  if (currentUser?.id !== store.owner_user_id) {
+  if (userId !== store.owner_user_id) {
     return { success: false, error: "Only the store owner can remove teammates." };
   }
   if (targetUserId === store.owner_user_id) {

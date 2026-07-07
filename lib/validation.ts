@@ -47,3 +47,9 @@ function formatZodError(error: ZodError): { message: string; fieldErrors: Record
 export function validateId(id: string): string {
   return validate(uuidSchema, id);
 }
+
+export const clerkUserIdSchema = z.string().regex(/^user_\w+$/, "Invalid user ID");
+
+export function validateClerkId(id: string): string {
+  return validate(clerkUserIdSchema, id);
+}

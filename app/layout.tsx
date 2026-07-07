@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { RegisterServiceWorker } from "@/components/pwa/register-sw";
 import { Toaster } from "sonner";
 
@@ -30,12 +31,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="m-0 p-0">
-        {children}
-        <RegisterServiceWorker />
-        <Toaster richColors position="top-right" closeButton />
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body className="m-0 p-0">
+          {children}
+          <RegisterServiceWorker />
+          <Toaster richColors position="top-right" closeButton />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
