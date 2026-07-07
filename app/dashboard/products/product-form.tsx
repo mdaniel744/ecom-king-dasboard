@@ -552,7 +552,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                   <Label htmlFor="mpn">MPN</Label>
                   <FieldInfo
                     title="MPN (Manufacturer Part Number)"
-                    description="A unique code assigned by the manufacturer to identify this exact product model. Find it on the product label, packaging, or manufacturer's documentation. When filled in together with Brand, Google treats this as a verified product — improving ad quality and reach."
+                    description="A unique code the manufacturer uses to identify this exact product model — no fixed length, typically a few characters up to 70 (letters, numbers, hyphens). Find it on the product label, spec sheet, or supplier invoice. Google uses Brand + MPN together to match your listing to the same product sold by other sellers, grouping them in Shopping results so buyers can compare price and seller. For unique or industrial products where you're likely the only seller, MPN's main job is simply to give Google a verified identity for the product — improving your ad eligibility and feed quality score."
                   />
                 </div>
                 <Input id="mpn" name="mpn" defaultValue={product?.mpn ?? ""} />
