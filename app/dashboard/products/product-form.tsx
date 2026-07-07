@@ -124,7 +124,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   }
 
   async function handleGenerateAlt(index: number) {
-    if (!name) {
+    if (!name.trim()) {
       toast.error("Fill in the product title first so the AI has something to work with.");
       return;
     }
@@ -133,9 +133,12 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
       const result = await generateImageAlt(name, description || null, brand || null, index);
       if (result.alt) {
         updateImageAlt(index, result.alt);
+        toast.success("Alt text generated — review and save.");
       } else {
         toast.error(result.error ?? "Could not generate alt text.");
       }
+    } catch {
+      toast.error("Alt text generation failed — please try again.");
     } finally {
       setGeneratingAltIndex(null);
     }
@@ -171,6 +174,8 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
       } else {
         toast.error(result.error ?? "Could not generate MPN.");
       }
+    } catch {
+      toast.error("MPN generation failed — please try again.");
     } finally {
       setIsGeneratingMpn(false);
     }
@@ -191,6 +196,8 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
       } else {
         toast.error(result.error ?? "Could not suggest a category.");
       }
+    } catch {
+      toast.error("Category suggestion failed — please try again.");
     } finally {
       setIsSuggestingCategory(false);
     }
@@ -435,7 +442,7 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                       className="mt-5 h-8 gap-1.5 text-xs shrink-0"
                     >
                       <Sparkles className="h-3 w-3" />
-                      {generatingAltIndex === i ? "..." : "Generate"}
+                      {generatingAltIndex === i ? "Generating..." : "Generate"}
                     </Button>
                   </div>
                 </div>
