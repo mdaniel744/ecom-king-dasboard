@@ -71,14 +71,21 @@ id, name, enabled_locales (array), google_content_language, google_feed_label
 ```
 id, store_id, category_id, name, slug, description, short_description,
 price, sale_price, currency, sku, stock_quantity, status,
-images (array), attributes (JSON), brand, condition, badge,
-is_featured, google_sync_status, created_at, updated_at
+images (array), image_alts (array), attributes (JSON),
+brand, mpn, gtin, condition, badge,
+is_featured, google_product_category,
+google_sync_status, google_sync_error, created_at, updated_at
 ```
-- Filter: always `store_id=eq.$STORE_ID` AND RLS restricts to `status='active'`
-- `images` is an array: `[0]` is the main image, `[1:]` are gallery images
-- `attributes` is a free-form JSON object: `{"Size": "20ft", "Color": "Blau"}`. Keys match `attributes.name` values — keep in sync
-- `condition` stores English codes: `"new"`, `"used"`, `"refurbished"`. Map to source language for display
-- `slug` is the URL identifier. Product detail pages live at `/produkt/[slug]` (or equivalent)
+- Filter: always `store_id=eq.$STORE_ID` AND `status='active'` for public queries
+- `images` is an array: `[0]` is the primary image, `[1:]` are gallery images
+- `image_alts` is a parallel array to `images` — `image_alts[i]` is the SEO alt text for `images[i]`. Use as `alt` on every `<img>` tag rendering a product image. Fallback: `product.name`. Never leave alt blank. Applies to product cards, detail gallery, everywhere.
+- `attributes` is a free-form JSON object: `{"Size": "20ft", "Color": "Blau"}`. Keys match `attributes.name` values — never hardcode
+- `brand` — manufacturer/brand name, show on product detail if set
+- `mpn` — manufacturer part number, show on product detail if set
+- `gtin` — barcode, usually null for custom/industrial products
+- `google_product_category` — Google taxonomy path. **Do NOT display** in any storefront UI. Use only in JSON-LD `category` field (see SEO section)
+- `condition` stores English codes: `"new"`, `"used"`, `"refurbished"`. Map to source-language display labels. Also maps to JSON-LD itemCondition (see SEO section)
+- `slug` — URL identifier for product detail pages: `/produkt/[slug]` or equivalent
 
 **categories**
 ```
@@ -162,6 +169,8 @@ If you query a table and get `[]` unexpectedly, test with curl immediately. RLS 
 
 **Priority 6:** Translation overlay — fetch from `translations` table for current locale, overlay field by field, always `translatedValue ?? sourceValue`
 
+**Priority 7:** SEO — `<head>` tags and JSON-LD structured data on every product and category page (see Section 9 below)
+
 ## 7. The Translation System — Two Separate Jobs
 
 **Job A — Content Translation (DeepSeek, automatic)**
@@ -199,7 +208,120 @@ Update the Link component shim so every `<Link to="/shop">` automatically become
 
 `isLocalizablePath` — whitelist of paths with real locale-specific pages. Source-language-only SEO pages must NOT get prefixed — they would 404.
 
-## 9. The Language Switcher
+## 9. SEO — `<head>` Tags and JSON-LD Structured Data
+
+Every product detail page and category landing page must have: a canonical URL, Open Graph tags, hreflang alternates, and JSON-LD structured data injected as `<script type="application/ld+json">` in `<head>`. This is additive — do not remove existing head tags.
+
+### All pages — universal
+
+```html
+<!-- Canonical: always the current page's own URL, no trailing slash -->
+<link rel="canonical" href="https://{{DOMAIN}}/[current-path]" />
+
+<!-- hreflang: one per locale + x-default pointing to source language -->
+<link rel="alternate" hreflang="{{SOURCE_LANGUAGE_CODE}}" href="https://{{DOMAIN}}/[path]" />
+<link rel="alternate" hreflang="en" href="https://{{DOMAIN}}/en/[path]" />
+<!-- repeat for every locale in enabled_locales -->
+<link rel="alternate" hreflang="x-default" href="https://{{DOMAIN}}/[path-in-source-language]" />
+```
+
+Only add hreflang for pages that actually have a translated route. `x-default` always points to the source language version.
+
+---
+
+### Product detail page — `<head>`
+
+```html
+<title>{product.name} | {{STORE_NAME}}</title>
+<meta name="description" content="{product.short_description ?? product.description?.slice(0,160)}" />
+<meta property="og:type" content="product" />
+<meta property="og:title" content="{product.name}" />
+<meta property="og:description" content="{product.short_description ?? product.description?.slice(0,160)}" />
+<meta property="og:image" content="{product.images[0]}" />
+<meta property="og:url" content="https://{{DOMAIN}}/produkt/{product.slug}" />
+```
+
+### Product detail page — JSON-LD
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "{product.name}",
+  "description": "{product.description ?? product.short_description}",
+  "image": ["{product.images[0]}", "{product.images[1]}"],
+  "sku": "{product.sku — omit key entirely if null}",
+  "mpn": "{product.mpn — omit if null}",
+  "gtin": "{product.gtin — omit if null}",
+  "category": "{product.google_product_category — omit if null}",
+  "brand": {
+    "@type": "Brand",
+    "name": "{product.brand — omit entire brand block if null}"
+  },
+  "offers": {
+    "@type": "Offer",
+    "url": "https://{{DOMAIN}}/produkt/{product.slug}",
+    "priceCurrency": "{product.currency}",
+    "price": "{product.sale_price ?? product.price}",
+    "availability": "{product.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'}",
+    "itemCondition": "{
+      new          → https://schema.org/NewCondition
+      used         → https://schema.org/UsedCondition
+      refurbished  → https://schema.org/RefurbishedCondition
+    }"
+  }
+}
+```
+
+Also inject a BreadcrumbList on every product page:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://{{DOMAIN}}" },
+    { "@type": "ListItem", "position": 2, "name": "{category.name}", "item": "https://{{DOMAIN}}/kategorie/{category.slug}" },
+    { "@type": "ListItem", "position": 3, "name": "{product.name}", "item": "https://{{DOMAIN}}/produkt/{product.slug}" }
+  ]
+}
+```
+
+If the product has no category, omit position 2 and renumber. Never include null values in JSON-LD output — omit the key entirely.
+
+---
+
+### Category landing page — `<head>`
+
+```html
+<title>{category.meta_title ?? category.name} | {{STORE_NAME}}</title>
+<meta name="description" content="{category.meta_description ?? category.description}" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="{category.meta_title ?? category.name}" />
+<meta property="og:description" content="{category.meta_description ?? category.description}" />
+<meta property="og:image" content="{category.image_url — omit if null}" />
+<meta property="og:url" content="https://{{DOMAIN}}/kategorie/{category.slug}" />
+```
+
+### Category landing page — JSON-LD
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://{{DOMAIN}}" },
+    { "@type": "ListItem", "position": 2, "name": "{parent.name}", "item": "https://{{DOMAIN}}/kategorie/{parent.slug}" },
+    { "@type": "ListItem", "position": 3, "name": "{category.name}", "item": "https://{{DOMAIN}}/kategorie/{category.slug}" }
+  ]
+}
+```
+
+If the category has no `parent_id`, omit position 2 and keep only Home → Category.
+
+---
+
+## 10. The Language Switcher
 
 Read `stores.enabled_locales` on startup. Build the switcher dynamically — never hardcode which languages exist. Use `NextLink` directly (NOT the locale-aware Link shim) for the switcher.
 
@@ -215,14 +337,34 @@ alternates.languages = {
 
 Only add the English alternate for pages that actually have an English route. `x-default` always points to the source language version.
 
-## 11. Condition Labels — A Common Trap
+## 11. hreflang — Tell Google About Both Versions
+
+*(Already covered in Section 9 above — the pattern is defined there. Apply it to every page type.)*
+
+## 12. Condition Labels — A Common Trap
 
 `products.condition` stores English codes: `"new"`, `"used"`, `"refurbished"`. Your data layer maps these to source-language display labels. Filter matching must use the mapped source-language label — never English.
 
 Every filter option needs two fields: `value` (for matching, source-language) and `label` (for display, translated).
 
-## 12. Verification Checklist
+## 13. Verification Checklist
 
+- [ ] `product.image_alts[i]` used as `alt` on every `<img>` rendering a product image — fallback to `product.name`
+- [ ] `product.short_description` shown on product cards (distinct from full `description`)
+- [ ] `product.badge` rendered as ribbon/chip on product cards when non-null
+- [ ] `product.sale_price` shown with strikethrough on `product.price` when set
+- [ ] `product.brand` and `product.mpn` shown on product detail if set
+- [ ] `product.google_product_category` not displayed anywhere in storefront UI
+- [ ] `category.meta_title` / `category.meta_description` in `<head>` on category pages
+- [ ] `category.image_url` on category cards with placeholder fallback
+- [ ] `category.description` on category cards and landing pages
+- [ ] `category.is_featured` + `category.display_order` build homepage category grid
+- [ ] JSON-LD Product schema on every product detail page
+- [ ] JSON-LD BreadcrumbList on every product detail and category page
+- [ ] `og:title`, `og:description`, `og:image`, `og:url` on all pages
+- [ ] `<link rel="canonical">` on every page
+- [ ] hreflang alternates on all pages with translated mirrors
+- [ ] Null fields omitted from JSON-LD (no null values in output)
 - [ ] Source language homepage loads live products, categories, sizes — no hardcoded arrays
 - [ ] English `/en/` homepage shows translated product names, headings, nav, buttons
 - [ ] DE→EN switch: all nav/footer/buttons change language
@@ -239,7 +381,7 @@ Every filter option needs two fields: `value` (for matching, source-language) an
 - [ ] Source language site unchanged after adding new locale
 - [ ] CLAUDE.md updated with table schemas used, RLS gaps discovered, i18n coverage, known gaps
 
-## 13. The Golden Rules
+## 14. The Golden Rules
 
 1. Every query includes `store_id` — without it you read other tenants' data
 2. Never `.select()` after `.insert()` on inquiries — insert-only access
@@ -250,7 +392,7 @@ Every filter option needs two fields: `value` (for matching, source-language) an
 7. Verify with curl before assuming RLS is fine — silent `[]` results hide access bugs
 8. CLAUDE.md is always up to date — the next agent reading it must continue without asking anything
 
-## 14. What to Check and Confirm Before Starting
+## 15. What to Check and Confirm Before Starting
 
 Do not begin wiring until you have verified all of the following yourself — read the codebase, query the database, and confirm. Do not ask the user for things you can find yourself.
 

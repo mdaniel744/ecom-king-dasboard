@@ -50,15 +50,29 @@ Once the store owner logs in for the first time:
 | Feed Label | Settings → Google Merchant | Market/country code (e.g. DE, US) |
 | Translation targets | Settings → Translation | Languages DeepSeek will translate into |
 
-### Phase D — Content Build Order
+### Phase D — Database Migration Check
+
+Before creating any products, confirm this column exists in Supabase. Run in the SQL editor:
+
+```sql
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alts text[] NOT NULL DEFAULT '{}';
+```
+
+This is safe to run multiple times. If it was already run, it does nothing.
+
+### Phase E — Content Build Order
 
 Always in this order — each step depends on the previous:
 
 1. **Attributes first** — before products, because products reference attribute values. Create the niche-specific vocabulary (size, material, color, type, etc.). Enrich each attribute value with `label`, `image_url`, and `description` via the pencil icon if they will appear as visual cards on the storefront homepage.
 2. **Categories second** — create the category structure. Add `image_url`, `description`, SEO fields. Mark homepage categories as `is_featured = true` and set `display_order`.
-3. **Products last** — assign categories and attributes that already exist. Write all text in the source language.
+3. **Products last** — assign categories and attributes that already exist. Write all text in the source language. For each product:
+   - Fill **Brand** and use **Generate** on MPN — gives Google a verified product identifier
+   - Use **AI Suggest** on Google Product Category — DeepSeek picks the correct taxonomy path
+   - Add at least one image URL, then use **Generate** on each image's alt text — critical for image SEO
+   - Set status to **Active** only when price, image, and title are all filled — the form will block saving as Active otherwise
 
-### Phase E — Language Activation and Backfill
+### Phase F — Language Activation and Backfill
 
 Once initial content exists:
 
@@ -67,12 +81,14 @@ Once initial content exists:
 3. **Backfill required:** re-save every existing product, category, and attribute value once to trigger translation of pre-existing content
 4. Confirm: query `translations` table — rows should exist for every key entity in the target locale
 
-### Phase F — Verification Checklist Before Storefront Handoff
+### Phase G — Verification Checklist Before Storefront Handoff
 
+- [ ] `image_alts` column exists in products table (SQL migration confirmed run)
 - [ ] `translations` table has rows for products, categories, attribute names, attribute values in target locale
-- [ ] Domain set correctly in Settings
+- [ ] Domain set correctly in Settings → points to storefront, not dashboard
 - [ ] `google_content_language` matches actual content language
 - [ ] `enabled_locales` reflects all intended target languages
+- [ ] Each product has Brand + MPN (use Generate), Google Product Category (use AI Suggest), and image alt text (use Generate per image)
 - [ ] Store ID noted for handoff
 
 **Pull the store ID:** query `stores` table filtered by the new owner's Clerk user ID.
@@ -188,10 +204,13 @@ Invisible tags on every page telling Google the German and English versions are 
 - [ ] Create Clerk user, hand over credentials
 - [ ] Store owner logs in — confirm store auto-provisioned
 - [ ] Pull and note the store ID
+- [ ] Run SQL migration: `ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alts text[] NOT NULL DEFAULT '{}';`
 - [ ] Set source language in Settings → Content Language
-- [ ] Set domain in Settings → Store Profile
+- [ ] Set domain in Settings → Store Profile (storefront domain, not dashboard domain)
+- [ ] Set Feed Label (market country code e.g. DE)
 - [ ] Create all Attributes for this niche; enrich values with label/image/description if needed
-- [ ] Enter all products, categories, attributes in source language
+- [ ] Create categories with image_url, description, is_featured, display_order, meta_title, meta_description
+- [ ] Enter all products in source language — for each: use Generate on MPN, AI Suggest on Google Product Category, Generate on each image alt text
 - [ ] Tick target languages in Settings → Translation
 - [ ] Re-save all existing content once (backfill)
 - [ ] Verify translations table has rows for all entities in target locale
