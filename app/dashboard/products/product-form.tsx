@@ -28,6 +28,7 @@ import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
+import { slugify } from "@/lib/slug";
 
 type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
@@ -44,6 +45,8 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [name, setName] = useState(product?.name ?? "");
+  const [slug, setSlug] = useState(product?.slug ?? "");
+  const [slugLocked, setSlugLocked] = useState(!!product?.slug);
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [brand, setBrand] = useState(product?.brand ?? "");
@@ -207,7 +210,10 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                   name="name"
                   required
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (!slugLocked) setSlug(slugify(e.target.value));
+                  }}
                   placeholder="e.g. 20ft High Cube Container"
                 />
                 <FieldError name="name" errors={fieldErrors} />
@@ -224,8 +230,12 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                 <Input
                   id="slug"
                   name="slug"
-                  defaultValue={product?.slug}
-                  placeholder="auto-generated from title if left blank"
+                  value={slug}
+                  onChange={(e) => {
+                    setSlugLocked(true);
+                    setSlug(e.target.value);
+                  }}
+                  placeholder="auto-generated from title"
                 />
                 <FieldError name="slug" errors={fieldErrors} />
               </div>
