@@ -16,6 +16,7 @@ import {
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { updateStoreSettings } from "@/app/dashboard/settings/actions";
 import { CONTENT_LANGUAGE_OPTIONS, FEED_LABEL_OPTIONS } from "@/lib/merchant-locales";
+import { FieldInfo } from "@/components/ui/field-info";
 import type { Store } from "@/lib/types";
 
 export function SettingsForm({ store }: { store: Store }) {
@@ -45,20 +46,29 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="name">Store Name</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="name">Store Name</Label>
+              <FieldInfo
+                title="Store Name"
+                description="Your business or store name as it appears in the dashboard. Used as the feed title in your Google Shopping XML feed."
+              />
+            </div>
             <Input id="name" name="name" required defaultValue={store.name} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="domain">Storefront Domain</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="domain">Storefront Domain</Label>
+              <FieldInfo
+                title="Storefront Domain"
+                description="The web address of your public store — e.g. mystore.com or shop.mystore.com. Used to build the product page links sent to Google Shopping. Without this set, Google sync will not work."
+              />
+            </div>
             <Input
               id="domain"
               name="domain"
               placeholder="e.g. mystore.com"
               defaultValue={store.domain ?? ""}
             />
-            <p className="text-xs text-muted-foreground">
-              Used to build each product&apos;s public page link for Google Merchant sync.
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -73,7 +83,14 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="google_merchant_id">Merchant Center ID</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="google_merchant_id">Merchant Center ID</Label>
+              <FieldInfo
+                title="Merchant Center ID"
+                description="Your Google Merchant Center account number. You can find it in the top-right corner of merchants.google.com — it's the number shown below your account name. Each store on this platform connects to its own separate Merchant Center account."
+                link={{ label: "Open Merchant Center", href: "https://merchants.google.com" }}
+              />
+            </div>
             <Input
               id="google_merchant_id"
               name="google_merchant_id"
@@ -82,7 +99,13 @@ export function SettingsForm({ store }: { store: Store }) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="google_merchant_datasource_id">API Data Source ID</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="google_merchant_datasource_id">API Data Source ID</Label>
+              <FieldInfo
+                title="API Data Source ID"
+                description="The ID of the API data source you created inside your Merchant Center account. This is how Google knows which product feed to associate your API uploads with. Get it from: Merchant Center → Settings → Data sources → Add product source → API."
+              />
+            </div>
             <Input
               id="google_merchant_datasource_id"
               name="google_merchant_datasource_id"
@@ -95,7 +118,13 @@ export function SettingsForm({ store }: { store: Store }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="google_content_language">Content Language</Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="google_content_language">Content Language</Label>
+                <FieldInfo
+                  title="Content Language"
+                  description="The language your product titles and descriptions are actually written in. If your products are described in German, set this to 'de'. Google checks that the language of your content matches this setting — a mismatch can get your products disapproved."
+                />
+              </div>
               <Select name="google_content_language" defaultValue={store.google_content_language}>
                 <SelectTrigger id="google_content_language">
                   <SelectValue />
@@ -110,7 +139,13 @@ export function SettingsForm({ store }: { store: Store }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="google_feed_label">Feed Label (market)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="google_feed_label">Feed Label (market)</Label>
+                <FieldInfo
+                  title="Feed Label (Market)"
+                  description="The country or market where your products are being sold — e.g. DE for Germany, GB for United Kingdom, US for United States. Google uses this to show your products in the right country's Shopping tab. Must match your Merchant Center data source configuration."
+                />
+              </div>
               <Select name="google_feed_label" defaultValue={store.google_feed_label}>
                 <SelectTrigger id="google_feed_label">
                   <SelectValue />

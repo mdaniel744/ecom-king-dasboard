@@ -83,7 +83,7 @@ export async function GET(
     <g:item_group_id>${escapeXml(p.id)}</g:item_group_id>
     <link>${escapeXml(link)}</link>
     <g:product_type>${productType ? cdata(productType) : ""}</g:product_type>
-    <g:google_product_category/>
+    ${p.google_product_category ? `<g:google_product_category>${cdata(p.google_product_category)}</g:google_product_category>` : "<g:google_product_category/>"}
     <g:image_link>${escapeXml(p.images[0])}</g:image_link>
     <g:condition>${p.condition}</g:condition>
     <g:availability>${p.status === "active" ? "in_stock" : "out_of_stock"}</g:availability>

@@ -93,6 +93,7 @@ export type Product = {
   brand: string | null;
   gtin: string | null;
   mpn: string | null;
+  google_product_category: string | null;
   is_featured: boolean;
   badge: string | null;
   condition: ProductCondition;

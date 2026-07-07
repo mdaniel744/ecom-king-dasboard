@@ -116,6 +116,7 @@ function buildProductInput(store: Store, product: Product, productType?: string 
       brand: product.brand ?? undefined,
       gtins: product.gtin ? [product.gtin] : undefined,
       mpn: product.mpn ?? undefined,
+      googleProductCategory: product.google_product_category ?? undefined,
       productTypes: productType ? [productType] : undefined,
       // Per Google's spec: explicitly declare no identifier rather than
       // silently omitting gtin/brand/mpn, which otherwise risks disapproval

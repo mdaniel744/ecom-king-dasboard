@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
-import { Plus, X, ArrowLeft } from "lucide-react";
+import { Plus, X, ArrowLeft, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,11 +20,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldError } from "@/components/dashboard/field-error";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
+import { FieldInfo } from "@/components/ui/field-info";
 import type { Category, Product } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
+import { suggestGoogleCategory } from "./suggest-category-action";
 
 type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
@@ -43,6 +45,10 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   const [name, setName] = useState(product?.name ?? "");
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
+  const [googleProductCategory, setGoogleProductCategory] = useState(product?.google_product_category ?? "");
+  const [isSuggestingCategory, setIsSuggestingCategory] = useState(false);
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState(product?.category_id ?? "");
 
   const initialAttrs = product?.attributes ? Object.entries(product.attributes) : [];
   const [attrs, setAttrs] = useState<[string, string][]>(
@@ -88,6 +94,26 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
     return match?.values ?? [];
   }
 
+  async function handleSuggestCategory() {
+    if (!name) {
+      toast.error("Fill in the product title first so the AI has something to work with.");
+      return;
+    }
+    setIsSuggestingCategory(true);
+    try {
+      const categoryName = categories.find((c) => c.id === selectedCategoryId)?.name ?? null;
+      const result = await suggestGoogleCategory(name, description || null, null, categoryName);
+      if (result.category) {
+        setGoogleProductCategory(result.category);
+        toast.success("Category suggested — review and adjust if needed.");
+      } else {
+        toast.error(result.error ?? "Could not suggest a category.");
+      }
+    } finally {
+      setIsSuggestingCategory(false);
+    }
+  }
+
   return (
     <form action={handleSubmit}>
       <div className="flex items-center justify-between gap-3">
@@ -119,7 +145,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="name">Title *</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="name">Title *</Label>
+                    <FieldInfo
+                      title="Product Title"
+                      description="The name of your product as it will appear on Google Shopping and your storefront. Be specific and include key details like size, color, or material. Google cuts off titles longer than 150 characters."
+                    />
+                  </div>
                   <AIWriteButton getValue={() => name} onResult={setName} fieldRole="name" defaultLocale={storeSourceLocale} />
                 </div>
                 <Input
@@ -132,8 +164,15 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                 />
                 <FieldError name="name" errors={fieldErrors} />
               </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="slug">URL Slug</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="slug">URL Slug</Label>
+                  <FieldInfo
+                    title="URL Slug"
+                    description="The web-address-friendly version of your product name — it becomes part of the product page URL (e.g. /products/20ft-high-cube-container). Auto-generated from the title if left blank. Use only letters, numbers, and hyphens."
+                  />
+                </div>
                 <Input
                   id="slug"
                   name="slug"
@@ -142,9 +181,16 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                 />
                 <FieldError name="slug" errors={fieldErrors} />
               </div>
+
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="short_description">Short Description</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="short_description">Short Description</Label>
+                    <FieldInfo
+                      title="Short Description"
+                      description="A brief 1–2 sentence summary shown on product cards and listings on your storefront. Not sent to Google — this is for your customers browsing your site. Keep it punchy and highlight the key benefit."
+                    />
+                  </div>
                   <AIWriteButton getValue={() => shortDescription} onResult={setShortDescription} fieldRole="short_description" defaultLocale={storeSourceLocale} />
                 </div>
                 <Input
@@ -156,9 +202,16 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                 />
                 <FieldError name="short_description" errors={fieldErrors} />
               </div>
+
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="description">Description</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="description">Description</Label>
+                    <FieldInfo
+                      title="Product Description"
+                      description="The full product description shown on the product detail page and sent to Google Shopping. Be detailed and accurate — include materials, dimensions, certifications, and use cases. Google uses this to match your product to search queries. Minimum 20 characters for Google approval."
+                    />
+                  </div>
                   <AIWriteButton getValue={() => description} onResult={setDescription} fieldRole="description" defaultLocale={storeSourceLocale} />
                 </div>
                 <Textarea
@@ -176,7 +229,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Attributes</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle className="text-base">Attributes</CardTitle>
+                <FieldInfo
+                  title="Product Attributes"
+                  description="Custom specifications for this product — things like Size, Material, Color, Weight, or any other property relevant to your niche. These are displayed on the product page and help customers filter and compare. Add only what applies to this specific product."
+                />
+              </div>
               <p className="text-sm text-muted-foreground">
                 Add only what this product needs. Suggestions come from
                 values you&apos;ve saved before — type your own anytime if
@@ -228,7 +287,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Images</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle className="text-base">Images</CardTitle>
+                <FieldInfo
+                  title="Product Images"
+                  description="Photos of your product. The first image is the main one shown in listings and sent to Google as the primary image. Google requires at least one image and recommends a white or neutral background. Minimum 100×100 pixels; 800×800 or larger recommended. Paste a hosted URL — e.g. from ImageKit, Cloudinary, or your media library."
+                />
+              </div>
               <p className="text-sm text-muted-foreground">
                 First image is the main one. Paste a hosted URL per box —
                 e.g. from ImageKit or any other image host.
@@ -274,7 +339,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="price">Price *</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="price">Price *</Label>
+                    <FieldInfo
+                      title="Price"
+                      description="The regular selling price of the product. Required for Google Shopping. Must match the price shown on your actual product page — Google checks this and will disapprove if they don't match."
+                    />
+                  </div>
                   <Input
                     id="price"
                     name="price"
@@ -286,7 +357,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                   <FieldError name="price" errors={fieldErrors} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="currency">Currency</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="currency">Currency</Label>
+                    <FieldInfo
+                      title="Currency"
+                      description="The 3-letter currency code for this product's price (e.g. EUR for Euros, USD for US Dollars, GBP for British Pounds). Must match the currency your storefront actually charges in."
+                    />
+                  </div>
                   <Select name="currency" defaultValue={product?.currency ?? "USD"}>
                     <SelectTrigger id="currency">
                       <SelectValue />
@@ -304,7 +381,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="sale_price">Sale Price (optional)</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="sale_price">Sale Price</Label>
+                  <FieldInfo
+                    title="Sale Price (optional)"
+                    description="A discounted price shown alongside the regular price on Google Shopping — Google displays the original price with a strikethrough and highlights the saving. Must be lower than the regular price. Leave blank if the product is not currently on sale."
+                  />
+                </div>
                 <Input
                   id="sale_price"
                   name="sale_price"
@@ -314,14 +397,16 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                   placeholder="Leave blank if not on sale"
                 />
                 <FieldError name="sale_price" errors={fieldErrors} />
-                <p className="text-xs text-muted-foreground">
-                  Shown to Google as a discounted price next to the regular
-                  price — must be lower than Price.
-                </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="status">Status</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="status">Status</Label>
+                  <FieldInfo
+                    title="Product Status"
+                    description="Draft: saved but not visible to customers or Google. Active: live on your storefront and eligible to sync to Google Shopping. Archived: taken off sale — removed from Google if previously synced."
+                  />
+                </div>
                 <Select name="status" defaultValue={product?.status ?? "draft"}>
                   <SelectTrigger id="status">
                     <SelectValue />
@@ -332,11 +417,16 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                     <SelectItem value="archived">Archived</SelectItem>
                   </SelectContent>
                 </Select>
-                {/* hidden native select keeps the value submitted with the form */}
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="condition">Condition</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="condition">Condition</Label>
+                  <FieldInfo
+                    title="Product Condition"
+                    description="Required by Google Shopping. New: brand new, unused, in original packaging. Used: previously owned or used. Refurbished: professionally restored to working order. Must accurately describe the actual product — Google may disapprove if the condition doesn't match the listing."
+                  />
+                </div>
                 <Select name="condition" defaultValue={product?.condition ?? "new"}>
                   <SelectTrigger id="condition">
                     <SelectValue />
@@ -350,7 +440,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="badge">Badge</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="badge">Badge</Label>
+                  <FieldInfo
+                    title="Badge (optional)"
+                    description="A short promotional label shown on the product card on your storefront — e.g. 'Bestseller', 'New Arrival', 'Limited Stock'. Not sent to Google. Keep it under 20 characters so it fits neatly on the card."
+                  />
+                </div>
                 <Input
                   id="badge"
                   name="badge"
@@ -369,13 +465,27 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                   className="h-4 w-4 rounded border-border accent-primary"
                 />
                 <Label htmlFor="is_featured" className="cursor-pointer">
-                  Featured (show in storefront highlights)
+                  Featured
                 </Label>
+                <FieldInfo
+                  title="Featured Product"
+                  description="Marks this product to be highlighted on your storefront's homepage or featured sections. Useful for your best-sellers, new arrivals, or promotions. Has no effect on Google Shopping."
+                />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="category_id">Category</Label>
-                <Select name="category_id" defaultValue={product?.category_id ?? ""}>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="category_id">Category</Label>
+                  <FieldInfo
+                    title="Store Category"
+                    description="Your own internal category for organising products in your store. Also used to build the product type breadcrumb sent to Google (e.g. 'Containers > Open Side'). Manage your categories from the Categories page in the sidebar."
+                  />
+                </div>
+                <Select
+                  name="category_id"
+                  defaultValue={product?.category_id ?? ""}
+                  onValueChange={setSelectedCategoryId}
+                >
                   <SelectTrigger id="category_id">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
@@ -390,7 +500,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="stock_quantity">Stock Quantity</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="stock_quantity">Stock Quantity</Label>
+                  <FieldInfo
+                    title="Stock Quantity"
+                    description="The number of units you have available. Used for internal inventory tracking. A product with status Active is shown as 'In Stock' on Google regardless of this number — update the status to Archived to mark it unavailable."
+                  />
+                </div>
                 <Input
                   id="stock_quantity"
                   name="stock_quantity"
@@ -401,7 +517,13 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="sku">SKU</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="sku">SKU</Label>
+                  <FieldInfo
+                    title="SKU (Stock Keeping Unit)"
+                    description="Your internal product code for inventory management — e.g. a warehouse reference or supplier code. Not shown to customers and not sent to Google. Completely optional and for your own records only."
+                  />
+                </div>
                 <Input id="sku" name="sku" defaultValue={product?.sku ?? ""} />
                 <FieldError name="sku" errors={fieldErrors} />
               </div>
@@ -414,18 +536,65 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="brand">Brand</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="brand">Brand</Label>
+                  <FieldInfo
+                    title="Brand"
+                    description="The manufacturer or brand name of the product. Used by Google to identify and match your product in search results. If you made the product yourself, use your company name. Required together with MPN to count as a verified product identifier."
+                  />
+                </div>
                 <Input id="brand" name="brand" defaultValue={product?.brand ?? ""} />
                 <FieldError name="brand" errors={fieldErrors} />
               </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="mpn">MPN</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="mpn">MPN</Label>
+                  <FieldInfo
+                    title="MPN (Manufacturer Part Number)"
+                    description="A unique code assigned by the manufacturer to identify this exact product model. Find it on the product label, packaging, or manufacturer's documentation. When filled in together with Brand, Google treats this as a verified product — improving ad quality and reach."
+                  />
+                </div>
                 <Input id="mpn" name="mpn" defaultValue={product?.mpn ?? ""} />
                 <FieldError name="mpn" errors={fieldErrors} />
                 <p className="text-xs text-muted-foreground">
-                  Manufacturer Part Number. Needs Brand filled in too to
-                  count as a valid identifier with Google.
+                  Needs Brand filled in too to count as a valid identifier with Google.
                 </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="google_product_category">Google Product Category</Label>
+                    <FieldInfo
+                      title="Google Product Category"
+                      description="Google's own official category path for your product, taken from their public taxonomy list. This tells Google exactly where to place your product in Shopping — wrong or missing categories reduce ad relevance and reach. Use the AI suggest button to auto-fill, or look up your category manually."
+                      link={{
+                        label: "Browse Google's full taxonomy list",
+                        href: "https://www.google.com/basepages/producttype/taxonomy-with-ids.en-US.txt",
+                      }}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSuggestCategory}
+                    disabled={isSuggestingCategory}
+                    className="h-7 gap-1.5 text-xs"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    {isSuggestingCategory ? "Thinking..." : "AI Suggest"}
+                  </Button>
+                </div>
+                <Input
+                  id="google_product_category"
+                  name="google_product_category"
+                  value={googleProductCategory}
+                  onChange={(e) => setGoogleProductCategory(e.target.value)}
+                  placeholder="e.g. Business & Industrial > Material Handling > Shipping Containers"
+                />
+                <FieldError name="google_product_category" errors={fieldErrors} />
               </div>
             </CardContent>
           </Card>
