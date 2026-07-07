@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -133,6 +133,8 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardContent>
       </Card>
 
+      <FeedUrlCard storeId={store.id} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Translation</CardTitle>
@@ -163,5 +165,41 @@ export function SettingsForm({ store }: { store: Store }) {
         {isPending ? "Saving..." : "Save"}
       </Button>
     </form>
+  );
+}
+
+function FeedUrlCard({ storeId }: { storeId: string }) {
+  const [feedUrl, setFeedUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setFeedUrl(`${window.location.origin}/api/feeds/${storeId}/google.xml`);
+  }, [storeId]);
+
+  function copy() {
+    navigator.clipboard.writeText(feedUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">XML Feed URL</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Alternative to the API sync. Paste this URL into Google Merchant Center → Settings → Data
+          sources → Add product source → Scheduled fetch. Google will pull your active products
+          automatically on a schedule — no GCP registration required.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex gap-2">
+          <Input readOnly value={feedUrl} className="font-mono text-xs" />
+          <Button type="button" variant="outline" onClick={copy} className="shrink-0">
+            {copied ? "Copied!" : "Copy"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
