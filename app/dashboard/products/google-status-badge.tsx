@@ -56,6 +56,35 @@ const STATUS_CONFIG: Record<
   },
 };
 
+const FRIENDLY_ERRORS: Array<{ match: RegExp; message: string; action: string }> = [
+  {
+    match: /not registered with the merchant account/i,
+    message: "This platform hasn't been connected to your Google Merchant Center account yet.",
+    action:
+      "Go to Settings → Google Merchant and make sure your Merchant Center ID is saved. If it is, contact your administrator to complete the one-time platform registration with Google.",
+  },
+  {
+    match: /invalid.*merchant.*id|merchant.*id.*invalid/i,
+    message: "The Merchant Center ID saved in Settings doesn't match any Google account we can reach.",
+    action: "Go to Settings → Google Merchant and double-check the Merchant Center ID.",
+  },
+  {
+    match: /permission|unauthorized|forbidden/i,
+    message: "Google rejected the request because this platform doesn't have permission to manage your Merchant Center account.",
+    action:
+      "In Google Merchant Center → Settings → People & access, make sure the platform service account is added as an Admin.",
+  },
+];
+
+function friendlyError(raw: string): { message: string; action: string } | null {
+  for (const rule of FRIENDLY_ERRORS) {
+    if (rule.match.test(raw)) {
+      return { message: rule.message, action: rule.action };
+    }
+  }
+  return null;
+}
+
 interface Props {
   status: GoogleSyncStatus;
   error: string | null;
@@ -63,6 +92,7 @@ interface Props {
 
 export function GoogleStatusBadge({ status, error }: Props) {
   const cfg = STATUS_CONFIG[status];
+  const friendly = status === "error" && error ? friendlyError(error) : null;
 
   return (
     <Popover>
@@ -74,17 +104,14 @@ export function GoogleStatusBadge({ status, error }: Props) {
       <PopoverContent className="w-80">
         <div className="flex items-start gap-2">
           {cfg.icon}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <p className="text-sm font-medium">{cfg.title}</p>
-            <p className="text-sm text-muted-foreground">{cfg.description}</p>
-            {status === "error" && error && (
-              <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-                {error}
-              </p>
-            )}
-            {cfg.action && (
-              <p className="text-xs text-muted-foreground">{cfg.action}</p>
-            )}
+            <p className="text-sm text-muted-foreground">
+              {friendly ? friendly.message : cfg.description}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {friendly ? friendly.action : cfg.action}
+            </p>
           </div>
         </div>
       </PopoverContent>
