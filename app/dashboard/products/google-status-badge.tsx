@@ -109,6 +109,11 @@ export function GoogleStatusBadge({ status, error }: Props) {
             <p className="text-sm text-muted-foreground">
               {friendly ? friendly.message : cfg.description}
             </p>
+            {status === "error" && error && !friendly && (
+              <p className="break-words rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+                {error}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               {friendly ? friendly.action : cfg.action}
             </p>
