@@ -3,7 +3,6 @@ import { Plus, Pencil } from "lucide-react";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -17,6 +16,7 @@ import { DeleteProductButton } from "@/app/dashboard/products/delete-product-but
 import { SyncGoogleButton } from "@/app/dashboard/products/sync-google-button";
 import { BulkSyncButton } from "@/app/dashboard/products/bulk-sync-button";
 import { ReadinessBadge } from "@/app/dashboard/products/readiness-badge";
+import { GoogleStatusBadge } from "@/app/dashboard/products/google-status-badge";
 import { StoreReadinessBanner } from "@/app/dashboard/products/store-readiness-banner";
 import { checkProductForMerchant, checkStoreMerchantConfig } from "@/lib/merchant-rules";
 
@@ -89,7 +89,7 @@ export default async function ProductsPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
-                  <Badge variant="outline">{product.google_sync_status}</Badge>
+                  <GoogleStatusBadge status={product.google_sync_status} error={product.google_sync_error} />
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   <ReadinessBadge issues={checkProductForMerchant(product, store)} />
