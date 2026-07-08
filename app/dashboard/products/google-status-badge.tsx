@@ -59,9 +59,9 @@ const STATUS_CONFIG: Record<
 const FRIENDLY_ERRORS: Array<{ match: RegExp; message: string; action: string }> = [
   {
     match: /not registered with the merchant account/i,
-    message: "This platform hasn't been connected to your Google Merchant Center account yet.",
+    message: "The platform's Google service account hasn't been granted access to your Merchant Center account yet.",
     action:
-      "Go to Settings → Google Merchant and make sure your Merchant Center ID is saved. If it is, contact your administrator to complete the one-time platform registration with Google.",
+      "In Google Merchant Center → Settings → Access and services → People and access, add merchant-sync@ecom-king-500706.iam.gserviceaccount.com as Admin. Once added, retry the sync.",
   },
   {
     match: /invalid.*merchant.*id|merchant.*id.*invalid/i,
