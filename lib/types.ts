@@ -11,6 +11,8 @@ export type Store = {
   /** Locales to auto-translate into, beyond google_content_language (the
    * store's own source language). e.g. ["en","fr"] for a German-source store. */
   enabled_locales: string[];
+  /** Where new-inquiry notification emails are sent. Null until the store owner sets it in Settings. */
+  notification_email: string | null;
   created_at: string;
   updated_at: string;
 };

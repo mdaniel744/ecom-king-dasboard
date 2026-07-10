@@ -15,6 +15,10 @@ const settingsSchema = z.object({
   googleContentLanguage: z.string().trim().min(2).max(10),
   googleFeedLabel: z.string().trim().min(2).max(10),
   enabledLocales: z.array(z.string().trim().min(2).max(10)).max(20),
+  notificationEmail: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z.string().trim().max(255).email().nullable()
+  ),
 });
 
 export async function updateStoreSettings(formData: FormData): Promise<ActionResult> {
@@ -30,6 +34,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       (formData.get("google_content_language") as string)?.trim() || "en";
     const googleFeedLabelRaw = (formData.get("google_feed_label") as string)?.trim() || "US";
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
+    const notificationEmailRaw = (formData.get("notification_email") as string)?.trim() ?? "";
 
     const {
       name,
@@ -39,6 +44,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleContentLanguage,
       googleFeedLabel,
       enabledLocales,
+      notificationEmail,
     } = validate(settingsSchema, {
       name: nameRaw,
       domain: domainCleaned,
@@ -47,6 +53,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleContentLanguage: googleContentLanguageRaw,
       googleFeedLabel: googleFeedLabelRaw,
       enabledLocales: enabledLocalesRaw,
+      notificationEmail: notificationEmailRaw,
     });
     const { error } = await supabaseAdmin
       .from("stores")
@@ -58,6 +65,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         google_content_language: googleContentLanguage,
         google_feed_label: googleFeedLabel,
         enabled_locales: enabledLocales,
+        notification_email: notificationEmail,
       })
       .eq("id", store.id);
 

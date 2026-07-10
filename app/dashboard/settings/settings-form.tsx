@@ -168,6 +168,32 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Inquiry Notifications</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            When a customer submits an inquiry on your storefront, we&apos;ll email it here
+            automatically.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="notification_email">Notification Email</Label>
+            <FieldInfo
+              title="Notification Email"
+              description="The email address that receives a message every time a customer submits an inquiry through your storefront. Leave blank to turn off email notifications — inquiries will still appear in the Inquiries page either way."
+            />
+          </div>
+          <Input
+            id="notification_email"
+            name="notification_email"
+            type="email"
+            placeholder="e.g. you@yourbusiness.com"
+            defaultValue={store.notification_email ?? ""}
+          />
+        </CardContent>
+      </Card>
+
       <FeedUrlCard storeId={store.id} />
 
       <Card>
