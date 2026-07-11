@@ -57,6 +57,87 @@ export async function createAttribute(formData: FormData): Promise<ActionResult>
   }
 }
 
+export async function updateAttribute(attributeId: string, formData: FormData): Promise<ActionResult> {
+  try {
+    attributeId = validateId(attributeId);
+    const store = await getCurrentStore();
+    const nameRaw = (formData.get("name") as string)?.trim() ?? "";
+    const valuesRaw = (formData.get("values") as string) || "";
+    const valuesArr = valuesRaw.split(",").map((v) => v.trim()).filter(Boolean);
+
+    const { name, values } = validate(attributeSchema, { name: nameRaw, values: valuesArr });
+
+    const { data: attribute, error } = await supabaseAdmin
+      .from("attributes")
+      .update({ name })
+      .eq("id", attributeId)
+      .eq("store_id", store.id)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!attribute) throw new Error("Attribute not found or not yours.");
+
+    // Append only genuinely new values — re-submitting an existing one is a no-op,
+    // not a duplicate badge.
+    const { data: existing } = await supabaseAdmin
+      .from("attribute_values")
+      .select("value")
+      .eq("attribute_id", attributeId);
+    const existingSet = new Set((existing ?? []).map((v) => v.value.toLowerCase()));
+    const newValues = values.filter((v) => !existingSet.has(v.toLowerCase()));
+
+    let savedValues: { id: string; value: string }[] = [];
+    if (newValues.length) {
+      const { data: inserted, error: valuesError } = await supabaseAdmin
+        .from("attribute_values")
+        .insert(newValues.map((value) => ({ attribute_id: attributeId, value })))
+        .select("id, value");
+
+      if (valuesError) throw valuesError;
+      savedValues = inserted ?? [];
+    }
+
+    await syncAttributeTranslations(store, attributeId, name, savedValues);
+
+    revalidatePath("/dashboard/attributes");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+export async function deleteAttributeValue(valueId: string): Promise<ActionResult> {
+  try {
+    valueId = validateId(valueId);
+    const store = await getCurrentStore();
+
+    // Verify the value's parent attribute belongs to this store
+    const { data: av, error: fetchErr } = await supabaseAdmin
+      .from("attribute_values")
+      .select("id, attribute_id")
+      .eq("id", valueId)
+      .single();
+    if (fetchErr || !av) throw new Error("Value not found.");
+
+    const { data: attr, error: attrErr } = await supabaseAdmin
+      .from("attributes")
+      .select("id")
+      .eq("id", av.attribute_id)
+      .eq("store_id", store.id)
+      .maybeSingle();
+    if (attrErr || !attr) throw new Error("Attribute not found or not yours.");
+
+    const { error } = await supabaseAdmin.from("attribute_values").delete().eq("id", valueId);
+    if (error) throw error;
+
+    revalidatePath("/dashboard/attributes");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
 export async function updateAttributeValue(valueId: string, formData: FormData): Promise<ActionResult> {
   try {
     valueId = validateId(valueId);

@@ -90,7 +90,10 @@ export default async function AttributesPage() {
                   </div>
                 </TableCell>
                 <TableCell className="text-right">
-                  <DeleteAttributeButton attributeId={attr.id} />
+                  <div className="flex justify-end gap-2">
+                    <AttributeDialog attribute={attr} />
+                    <DeleteAttributeButton attributeId={attr.id} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

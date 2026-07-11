@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
-import { updateAttributeValue } from "@/app/dashboard/attributes/actions";
+import { deleteAttributeValue, updateAttributeValue } from "@/app/dashboard/attributes/actions";
 import type { AttributeValue } from "@/lib/types";
 
 export function AttributeValueEditDialog({
@@ -119,7 +119,31 @@ export function AttributeValueEditDialog({
             />
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex items-center sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isPending}
+              className="text-destructive hover:text-destructive"
+              onClick={() => {
+                if (!confirm(`Remove the value "${attributeValue.label ?? attributeValue.value}"? Products already using it keep their saved text; it just disappears from the dropdown options.`)) {
+                  return;
+                }
+                setError(null);
+                startTransition(async () => {
+                  const result = await deleteAttributeValue(attributeValue.id);
+                  if (result.success) {
+                    toast.success("Value removed");
+                    setOpen(false);
+                  } else {
+                    setError(result.error);
+                    toast.error(result.error);
+                  }
+                });
+              }}
+            >
+              Remove
+            </Button>
             <Button type="submit" disabled={isPending}>
               {isPending ? "Saving..." : "Save"}
             </Button>
