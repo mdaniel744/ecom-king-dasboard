@@ -5,6 +5,9 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/feeds(.*)",
+  // Called by the Postgres trigger (pg_net), not a signed-in user — it
+  // authenticates itself via INQUIRY_WEBHOOK_SECRET instead of Clerk.
+  "/api/inquiries/notify",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
