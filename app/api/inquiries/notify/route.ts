@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
     productName = product?.name ?? null;
   }
 
-  const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/inquiries`;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mycontainergmbh.com";
+  const dashboardUrl = `${appUrl.replace(/\/$/, "")}/dashboard/inquiries`;
 
   try {
     await sendMail({
