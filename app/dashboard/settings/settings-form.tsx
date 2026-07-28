@@ -201,6 +201,27 @@ export function SettingsForm({ store }: { store: Store }) {
               → the word is <code>produkt</code>.
             </p>
           </div>
+          <div className="mt-4 space-y-1.5">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="source_locale_has_prefix"
+                defaultChecked={store.source_locale_has_prefix}
+                className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+              />
+              <span>
+                My site keeps a language code in the address even on its main/default language
+                <FieldInfo
+                  title="Source Language Prefix"
+                  description={
+                    'Most sites drop the language code for their main language — e.g. diecontainers.com/produkt/... has no /de/, even though German is the site\'s main language. Leave this UNCHECKED for that (the common case).\n\n' +
+                    'Some sites keep it everywhere, even for the main language — e.g. stfcontainer.com/nl/containers/... keeps /nl/ even though Dutch is that site\'s main language. CHECK this box for that case.\n\n' +
+                    'Test it yourself: open a real product page in your site\'s own main language and see if the address bar has a language code (like /nl/ or /de/) right after the domain, or not.'
+                  }
+                />
+              </span>
+            </label>
+          </div>
         </CardContent>
       </Card>
 

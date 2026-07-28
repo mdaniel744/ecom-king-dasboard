@@ -138,11 +138,15 @@ export async function getTranslationsByLocale(
 }
 
 /**
- * Builds this product's URL for a given locale. The locale-prefix
- * convention (no prefix for the store's source language, /{locale}
- * otherwise) is a fixed rule every storefront agent is briefed to follow —
- * see the onboarding playbook. The path segment after the domain/prefix
- * (e.g. "products") varies per store and comes from stores.product_url_path.
+ * Builds this product's URL for a given locale. Whether the source language
+ * gets its own prefix or not is genuinely per-store — confirmed to differ
+ * in practice (diecontainers.com/produkt/... has no /de/ prefix even
+ * though de is the source language; stfcontainer.com/nl/containers/... DOES
+ * keep /nl/ even though nl is the source language) — see
+ * stores.source_locale_has_prefix. Never assume either behavior without
+ * testing the real live site. The path segment itself (e.g. "products",
+ * "containers", "produkt") also varies per store, from
+ * stores.product_url_path.
  *
  * Exported — the XML feed route builds links the exact same way, so a
  * product's link is identical whether it reached Google via API push or
@@ -151,7 +155,8 @@ export async function getTranslationsByLocale(
 export function buildProductLink(store: Store, product: Product, locale: string): string {
   const base = store.domain!.startsWith("http") ? store.domain! : `https://${store.domain}`;
   const trimmedBase = base.replace(/\/$/, "");
-  const localePrefix = locale === store.google_content_language ? "" : `/${locale}`;
+  const isSource = locale === store.google_content_language;
+  const localePrefix = isSource && !store.source_locale_has_prefix ? "" : `/${locale}`;
   const path = store.product_url_path.replace(/^\/|\/$/g, "");
   return `${trimmedBase}${localePrefix}/${path}/${product.slug}`;
 }

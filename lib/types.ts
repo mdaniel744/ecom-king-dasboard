@@ -14,11 +14,16 @@ export type Store = {
    * google_feed_label for stores created before this field existed. */
   google_feed_labels: string[];
   /** The URL path segment for product detail pages on this store's storefront
-   * (e.g. "products" for mycontainergmbh.com/products/slug). Used to build
-   * locale-correct links sent to Google — the storefront's locale-prefix
-   * convention (no prefix for source language, /{locale} otherwise) is a
-   * fixed platform rule, but this segment varies per store. */
+   * (e.g. "products" for mycontainergmbh.com/products/slug). Varies per
+   * store — confirmed by testing the real live site, never assumed. */
   product_url_path: string;
+  /** Whether this store's OWN source language still gets an explicit locale
+   * prefix (e.g. stfcontainer.com/nl/... even though nl is the source
+   * language) rather than the more common no-prefix-for-source convention
+   * (diecontainers.com/produkt/... with no /de/). Confirmed to genuinely
+   * differ per storefront — don't assume either default without testing
+   * the real site, same as product_url_path. */
+  source_locale_has_prefix: boolean;
   /** Locales to auto-translate into, beyond google_content_language (the
    * store's own source language). e.g. ["en","fr"] for a German-source store. */
   enabled_locales: string[];

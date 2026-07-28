@@ -21,6 +21,7 @@ const settingsSchema = z.object({
     .min(1, "Product page path is required")
     .max(100)
     .regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens — no slashes or spaces"),
+  sourceLocaleHasPrefix: z.boolean(),
   enabledLocales: z.array(z.string().trim().min(2).max(10)).max(20),
   notificationEmail: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? null : v),
@@ -47,6 +48,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
     // if that's also somehow unset.
     const googleFeedLabelRaw = googleFeedLabelsRaw[0] || store.google_feed_label || "US";
     const productUrlPathRaw = (formData.get("product_url_path") as string)?.trim() || "products";
+    const sourceLocaleHasPrefixRaw = formData.get("source_locale_has_prefix") === "on";
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
     const notificationEmailRaw = (formData.get("notification_email") as string)?.trim() ?? "";
 
@@ -59,6 +61,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleFeedLabel,
       googleFeedLabels,
       productUrlPath,
+      sourceLocaleHasPrefix,
       enabledLocales,
       notificationEmail,
     } = validate(settingsSchema, {
@@ -70,6 +73,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleFeedLabel: googleFeedLabelRaw,
       googleFeedLabels: googleFeedLabelsRaw.length > 0 ? googleFeedLabelsRaw : [googleFeedLabelRaw],
       productUrlPath: productUrlPathRaw,
+      sourceLocaleHasPrefix: sourceLocaleHasPrefixRaw,
       enabledLocales: enabledLocalesRaw,
       notificationEmail: notificationEmailRaw,
     });
@@ -84,6 +88,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         google_feed_label: googleFeedLabel,
         google_feed_labels: googleFeedLabels,
         product_url_path: productUrlPath,
+        source_locale_has_prefix: sourceLocaleHasPrefix,
         enabled_locales: enabledLocales,
         notification_email: notificationEmail,
       })
