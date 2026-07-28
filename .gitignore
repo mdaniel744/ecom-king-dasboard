@@ -35,3 +35,6 @@ next-env.d.ts
 
 # internal notes
 CLAUDE.md
+
+# project-scoped MCP config (contains live Supabase access token)
+.mcp.json

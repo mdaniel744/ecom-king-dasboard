@@ -170,6 +170,56 @@ export function SettingsForm({ store }: { store: Store }) {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Delivery Markets</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Every country you can actually deliver a product to. Each product gets submitted to
+            Google once per market, in every language checked below under Translation — so a store
+            with 2 markets and 3 languages sends 6 listings per product. Base your markets on where
+            you physically deliver, not on which languages your customers happen to speak — a
+            language doesn&apos;t need its own market, it just rides along inside markets you
+            already serve.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+            {FEED_LABEL_OPTIONS.map((option) => (
+              <label key={option.value} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="google_feed_labels"
+                  value={option.value}
+                  defaultChecked={
+                    (store.google_feed_labels?.length
+                      ? store.google_feed_labels
+                      : [store.google_feed_label]
+                    ).includes(option.value)
+                  }
+                  className="h-4 w-4 rounded border-border accent-primary"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="product_url_path">Product Page URL Path</Label>
+              <FieldInfo
+                title="Product Page URL Path"
+                description="The single word in your storefront's product page URLs, right after the domain (and after the language prefix, if any) — e.g. 'products' for yoursite.com/products/some-item, or 'containers' for yoursite.com/containers/some-item. Google checks that the link in each listing actually matches that listing's language, so this needs to be exactly right for every market/language combination to link correctly."
+              />
+            </div>
+            <Input
+              id="product_url_path"
+              name="product_url_path"
+              placeholder="e.g. products"
+              defaultValue={store.product_url_path ?? "products"}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Inquiry Notifications</CardTitle>
           <p className="text-sm text-muted-foreground">
             When a customer submits an inquiry on your storefront, we&apos;ll email it here

@@ -14,6 +14,13 @@ const settingsSchema = z.object({
   googleMerchantDatasourceId: z.string().trim().max(100).nullable(),
   googleContentLanguage: z.string().trim().min(2).max(10),
   googleFeedLabel: z.string().trim().min(2).max(10),
+  googleFeedLabels: z.array(z.string().trim().min(2).max(10)).max(50),
+  productUrlPath: z
+    .string()
+    .trim()
+    .min(1, "Product page path is required")
+    .max(100)
+    .regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens — no slashes or spaces"),
   enabledLocales: z.array(z.string().trim().min(2).max(10)).max(20),
   notificationEmail: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? null : v),
@@ -33,6 +40,8 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
     const googleContentLanguageRaw =
       (formData.get("google_content_language") as string)?.trim() || "en";
     const googleFeedLabelRaw = (formData.get("google_feed_label") as string)?.trim() || "US";
+    const googleFeedLabelsRaw = formData.getAll("google_feed_labels") as string[];
+    const productUrlPathRaw = (formData.get("product_url_path") as string)?.trim() || "products";
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
     const notificationEmailRaw = (formData.get("notification_email") as string)?.trim() ?? "";
 
@@ -43,6 +52,8 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleMerchantDatasourceId,
       googleContentLanguage,
       googleFeedLabel,
+      googleFeedLabels,
+      productUrlPath,
       enabledLocales,
       notificationEmail,
     } = validate(settingsSchema, {
@@ -52,6 +63,8 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleMerchantDatasourceId: googleMerchantDatasourceIdRaw,
       googleContentLanguage: googleContentLanguageRaw,
       googleFeedLabel: googleFeedLabelRaw,
+      googleFeedLabels: googleFeedLabelsRaw.length > 0 ? googleFeedLabelsRaw : [googleFeedLabelRaw],
+      productUrlPath: productUrlPathRaw,
       enabledLocales: enabledLocalesRaw,
       notificationEmail: notificationEmailRaw,
     });
@@ -64,6 +77,8 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         google_merchant_datasource_id: googleMerchantDatasourceId,
         google_content_language: googleContentLanguage,
         google_feed_label: googleFeedLabel,
+        google_feed_labels: googleFeedLabels,
+        product_url_path: productUrlPath,
         enabled_locales: enabledLocales,
         notification_email: notificationEmail,
       })

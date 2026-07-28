@@ -272,7 +272,11 @@ export type BulkSyncResult = {
 
 // The Google service account credential is shared across every tenant on
 // the platform (see CLAUDE.md) — these bound how much of that shared quota
-// a single store's bulk sync click can consume in one run.
+// a single store's bulk sync click can consume in one run. Since
+// upsertGoogleProduct now submits once per (market x locale) combination
+// internally (paced with its own small delay), a single "product" here can
+// mean several real API calls — this delay is on top of that, between
+// products, not a replacement for it.
 const MAX_BULK_SYNC = 200;
 const BULK_SYNC_DELAY_MS = 150;
 

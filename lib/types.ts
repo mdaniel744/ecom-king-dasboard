@@ -8,6 +8,17 @@ export type Store = {
   google_merchant_datasource_id: string | null;
   google_content_language: string;
   google_feed_label: string;
+  /** Delivery/target markets for Google Merchant sync (country feed labels,
+   * e.g. ["DE","BE"]). One product gets submitted once per market x per
+   * enabled locale. Always non-empty in practice — backfilled from
+   * google_feed_label for stores created before this field existed. */
+  google_feed_labels: string[];
+  /** The URL path segment for product detail pages on this store's storefront
+   * (e.g. "products" for mycontainergmbh.com/products/slug). Used to build
+   * locale-correct links sent to Google — the storefront's locale-prefix
+   * convention (no prefix for source language, /{locale} otherwise) is a
+   * fixed platform rule, but this segment varies per store. */
+  product_url_path: string;
   /** Locales to auto-translate into, beyond google_content_language (the
    * store's own source language). e.g. ["en","fr"] for a German-source store. */
   enabled_locales: string[];
