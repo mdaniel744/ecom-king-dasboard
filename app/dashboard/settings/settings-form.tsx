@@ -186,7 +186,7 @@ export function SettingsForm({ store }: { store: Store }) {
                 description={
                   'This is NOT a link — just one plain word, no slashes, no "https://". We already know your domain and each product\'s own name, so this is the one missing piece: the single word your own website puts between them.\n\n' +
                   'Example: if a real product page on your site is diecontainers.com/produkt/10-fus-container, the word is "produkt". We build every link we send Google the same way: domain + this word + product name — automatically.\n\n' +
-                  'Open any real product page on your own live site and copy the one word that sits right after the domain. If you\'re not sure, ask whoever built your storefront.'
+                  'Make sure you\'re actually looking at a single product\'s page (not the shop list, home, or a category page). Copy the one word right after the domain — or, if there\'s a language code first (like /de/ or /nl/), the one word right after that. Example: domain.com/de/WORD/product-name → copy WORD. If you\'re not sure, ask whoever built your storefront.'
                 }
               />
             </div>
