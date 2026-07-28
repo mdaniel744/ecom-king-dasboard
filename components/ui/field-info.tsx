@@ -23,7 +23,7 @@ export function FieldInfo({ title, description, link }: Props) {
       </PopoverTrigger>
       <PopoverContent className="w-80 text-sm" side="top" align="start">
         <p className="font-medium mb-1">{title}</p>
-        <p className="text-muted-foreground leading-relaxed">{description}</p>
+        <p className="whitespace-pre-line text-muted-foreground leading-relaxed">{description}</p>
         {link && (
           <a
             href={link.href}

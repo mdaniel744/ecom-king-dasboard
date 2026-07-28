@@ -180,18 +180,26 @@ export function SettingsForm({ store }: { store: Store }) {
           </div>
           <div className="mt-4 space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <Label htmlFor="product_url_path">Product Page URL Path</Label>
+              <Label htmlFor="product_url_path">Product Page Word</Label>
               <FieldInfo
-                title="Product Page URL Path"
-                description="The single word in your storefront's product page URLs, right after the domain (and after the language prefix, if any) — e.g. 'products' for yoursite.com/products/some-item, or 'containers' for yoursite.com/containers/some-item. Google checks that the link in each listing actually matches that listing's language, so this needs to be exactly right for every market/language combination to link correctly."
+                title="Product Page Word"
+                description={
+                  'This is NOT a link — just one plain word, no slashes, no "https://". We already know your domain and each product\'s own name, so this is the one missing piece: the single word your own website puts between them.\n\n' +
+                  'Example: if a real product page on your site is diecontainers.com/produkt/10-fus-container, the word is "produkt". We build every link we send Google the same way: domain + this word + product name — automatically.\n\n' +
+                  'Open any real product page on your own live site and copy the one word that sits right after the domain. If you\'re not sure, ask whoever built your storefront.'
+                }
               />
             </div>
             <Input
               id="product_url_path"
               name="product_url_path"
-              placeholder="e.g. products"
+              placeholder="e.g. produkt"
               defaultValue={store.product_url_path ?? "products"}
             />
+            <p className="text-xs text-muted-foreground">
+              Not a link — just the one word. See diecontainers.com/<strong>produkt</strong>/some-item
+              → the word is <code>produkt</code>.
+            </p>
           </div>
         </CardContent>
       </Card>
