@@ -116,54 +116,32 @@ export function SettingsForm({ store }: { store: Store }) {
               From Merchant Center: Settings → Data sources → Primary sources → Add product source → API.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="google_content_language">Content Language</Label>
-                <FieldInfo
-                  title="Content Language"
-                  description="The language your product titles and descriptions are actually written in. If your products are described in German, set this to 'de'. Google checks that the language of your content matches this setting — a mismatch can get your products disapproved."
-                />
-              </div>
-              <Select name="google_content_language" defaultValue={store.google_content_language}>
-                <SelectTrigger id="google_content_language">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONTENT_LANGUAGE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="google_content_language">Content Language</Label>
+              <FieldInfo
+                title="Content Language"
+                description="The language you actually write your product titles and descriptions in — your store's source language. Not a list: this is the one language everything starts in, before translation. To also submit listings in other languages, check them under Translation below; to sell into more countries, use Delivery Markets below."
+              />
             </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="google_feed_label">Feed Label (market)</Label>
-                <FieldInfo
-                  title="Feed Label (Market)"
-                  description="The country or market where your products are being sold — e.g. DE for Germany, GB for United Kingdom, US for United States. Google uses this to show your products in the right country's Shopping tab. Must match your Merchant Center data source configuration."
-                />
-              </div>
-              <Select name="google_feed_label" defaultValue={store.google_feed_label}>
-                <SelectTrigger id="google_feed_label">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FEED_LABEL_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select name="google_content_language" defaultValue={store.google_content_language}>
+              <SelectTrigger id="google_content_language">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTENT_LANGUAGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <p className="text-xs text-muted-foreground">
-            Must match the actual language/market of your product titles and descriptions — e.g. a
-            German-language store should use <code>de</code> / <code>DE</code>, not the default{" "}
-            <code>en</code> / <code>US</code>, or Google may flag a language mismatch.
+            Must match the actual language of your product titles and descriptions — e.g. a
+            German-language store should use <code>de</code>, not the default <code>en</code>, or
+            Google may flag a language mismatch. Which countries you sell into is configured
+            separately under Delivery Markets below.
           </p>
         </CardContent>
       </Card>

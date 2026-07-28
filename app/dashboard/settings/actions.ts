@@ -39,8 +39,13 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       (formData.get("google_merchant_datasource_id") as string)?.trim() || null;
     const googleContentLanguageRaw =
       (formData.get("google_content_language") as string)?.trim() || "en";
-    const googleFeedLabelRaw = (formData.get("google_feed_label") as string)?.trim() || "US";
     const googleFeedLabelsRaw = formData.getAll("google_feed_labels") as string[];
+    // google_feed_label (singular) has no form field of its own anymore —
+    // Delivery Markets is the single source of truth in the UI. Derive it
+    // as "the primary market" for the legacy column (still read by the XML
+    // feed route), defaulting to the store's current value, then "US" only
+    // if that's also somehow unset.
+    const googleFeedLabelRaw = googleFeedLabelsRaw[0] || store.google_feed_label || "US";
     const productUrlPathRaw = (formData.get("product_url_path") as string)?.trim() || "products";
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
     const notificationEmailRaw = (formData.get("notification_email") as string)?.trim() ?? "";
