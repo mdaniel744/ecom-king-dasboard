@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { Product } from "@/lib/types";
+import { buildProductLink, getTranslationsByLocale } from "@/lib/google-merchant";
+import type { Product, Store } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -15,20 +16,16 @@ function formatPrice(amount: number, currency: string): string {
   return `${amount.toFixed(2)} ${currency}`;
 }
 
-function buildLink(domain: string, slug: string): string {
-  const base = domain.startsWith("http") ? domain : `https://${domain}`;
-  return `${base.replace(/\/$/, "")}/products/${slug}`;
-}
-
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ storeId: string }> }
 ) {
   const { storeId } = await params;
+  const { searchParams } = new URL(request.url);
 
   const { data: store } = await supabaseAdmin
     .from("stores")
-    .select("id, name, domain")
+    .select("id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path")
     .eq("id", storeId)
     .maybeSingle();
 
@@ -38,6 +35,16 @@ export async function GET(
       headers: { "Content-Type": "text/plain" },
     });
   }
+
+  // No market/locale in the URL = the store's primary market and its own
+  // source language — this is the exact single-variant behavior the feed
+  // has always had, preserved for any URL already pasted into Merchant
+  // Center before multi-market/language support existed.
+  const market =
+    searchParams.get("market") ||
+    store.google_feed_labels?.[0] ||
+    store.google_feed_label;
+  const locale = searchParams.get("locale") || store.google_content_language;
 
   const { data: products } = await supabaseAdmin
     .from("products")
@@ -67,10 +74,13 @@ export async function GET(
     ? store.domain
     : `https://${store.domain}`;
 
-  const items = (products ?? [])
-    .filter((p: Product) => p.images?.length > 0)
-    .map((p: Product) => {
-      const link = buildLink(store.domain!, p.slug);
+  const eligibleProducts = (products ?? []).filter((p: Product) => p.images?.length > 0);
+
+  const items = await Promise.all(
+    eligibleProducts.map(async (p: Product) => {
+      const textByLocale = await getTranslationsByLocale(store as Store, p);
+      const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
+      const link = buildProductLink(store as Store, p, locale);
       const hasIdentifier = Boolean(p.brand && p.mpn);
       const productType = breadcrumb(p.category_id);
       const additionalImages = (p.images ?? []).slice(1, 10);
@@ -78,8 +88,8 @@ export async function GET(
       return `
   <item>
     <g:id>${escapeXml(p.id)}</g:id>
-    <g:title>${cdata(p.name)}</g:title>
-    <g:description>${cdata(p.description ?? p.name)}</g:description>
+    <g:title>${cdata(text.name)}</g:title>
+    <g:description>${cdata(text.description)}</g:description>
     <g:item_group_id>${escapeXml(p.id)}</g:item_group_id>
     <link>${escapeXml(link)}</link>
     <g:product_type>${productType ? cdata(productType) : ""}</g:product_type>
@@ -95,14 +105,15 @@ export async function GET(
     ${additionalImages.map((img: string) => `<g:additional_image_link>${escapeXml(img)}</g:additional_image_link>`).join("\n    ")}
     <g:identifier_exists>${hasIdentifier ? "yes" : "no"}</g:identifier_exists>
   </item>`;
-    });
+    })
+  );
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:g="http://base.google.com/ns/1.0" xmlns:c="http://base.google.com/cns/1.0" version="2.0">
 <channel>
 <title>${cdata(store.name)}</title>
 <link>${cdata(storeUrl)}</link>
-<description>${cdata(`Product feed for ${store.name}`)}</description>
+<description>${cdata(`Product feed for ${store.name} — ${locale} / ${market}`)}</description>
 ${items.join("")}
 </channel>
 </rss>`;

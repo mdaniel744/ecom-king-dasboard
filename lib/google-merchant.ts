@@ -93,7 +93,7 @@ function getMarketsAndLocales(store: Store): { markets: string[]; locales: strin
   return { markets, locales };
 }
 
-type TranslatedFields = { name: string; description: string; short_description: string | null };
+export type TranslatedFields = { name: string; description: string; short_description: string | null };
 
 /**
  * Fetches every translation row for this product once, then returns a
@@ -101,8 +101,12 @@ type TranslatedFields = { name: string; description: string; short_description: 
  * falling back to the product's own (source-language) fields when a
  * translation row is missing for a given locale/field — same fallback rule
  * storefronts already use, applied here so Google never gets a blank field.
+ *
+ * Exported for reuse by the XML feed route (app/api/feeds/.../google.xml) —
+ * both sync paths must build translated text the exact same way, or a
+ * store's API-push and XML-feed listings could disagree.
  */
-async function getTranslationsByLocale(
+export async function getTranslationsByLocale(
   store: Store,
   product: Product
 ): Promise<Map<string, TranslatedFields>> {
@@ -139,8 +143,12 @@ async function getTranslationsByLocale(
  * otherwise) is a fixed rule every storefront agent is briefed to follow —
  * see the onboarding playbook. The path segment after the domain/prefix
  * (e.g. "products") varies per store and comes from stores.product_url_path.
+ *
+ * Exported — the XML feed route builds links the exact same way, so a
+ * product's link is identical whether it reached Google via API push or
+ * via the XML feed.
  */
-function buildProductLink(store: Store, product: Product, locale: string): string {
+export function buildProductLink(store: Store, product: Product, locale: string): string {
   const base = store.domain!.startsWith("http") ? store.domain! : `https://${store.domain}`;
   const trimmedBase = base.replace(/\/$/, "");
   const localePrefix = locale === store.google_content_language ? "" : `/${locale}`;

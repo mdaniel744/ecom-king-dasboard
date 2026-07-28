@@ -222,7 +222,7 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardContent>
       </Card>
 
-      <FeedUrlCard storeId={store.id} />
+      <FeedUrlCard store={store} />
 
       <Card>
         <CardHeader>
@@ -257,37 +257,65 @@ export function SettingsForm({ store }: { store: Store }) {
   );
 }
 
-function FeedUrlCard({ storeId }: { storeId: string }) {
-  const [feedUrl, setFeedUrl] = useState("");
-  const [copied, setCopied] = useState(false);
+function FeedUrlCard({ store }: { store: Store }) {
+  const [origin, setOrigin] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   useEffect(() => {
-    setFeedUrl(`${window.location.origin}/api/feeds/${storeId}/google.xml`);
-  }, [storeId]);
+    setOrigin(window.location.origin);
+  }, []);
 
-  function copy() {
-    navigator.clipboard.writeText(feedUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const markets = store.google_feed_labels?.length ? store.google_feed_labels : [store.google_feed_label];
+  const locales = Array.from(new Set([store.google_content_language, ...(store.enabled_locales ?? [])]));
+
+  const rows = markets.flatMap((market) =>
+    locales.map((locale) => ({
+      key: `${market}-${locale}`,
+      market,
+      locale,
+      url: origin
+        ? `${origin}/api/feeds/${store.id}/google.xml?market=${market}&locale=${locale}`
+        : "",
+    }))
+  );
+
+  function copy(key: string, url: string) {
+    navigator.clipboard.writeText(url);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">XML Feed URL</CardTitle>
+        <CardTitle className="text-base">XML Feed URLs</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Alternative to the API sync. Paste this URL into Google Merchant Center → Settings → Data
-          sources → Add product source → Scheduled fetch. Google will pull your active products
-          automatically on a schedule — no GCP registration required.
+          Alternative to the API sync — matches it exactly, including translated text and correct
+          links per language. One URL per market/language combination below; add each one as its
+          own separate data source in Google Merchant Center → Settings → Data sources → Add
+          product source → Scheduled fetch. No GCP registration required for this method.
         </p>
       </CardHeader>
-      <CardContent>
-        <div className="flex gap-2">
-          <Input readOnly value={feedUrl} className="font-mono text-xs" />
-          <Button type="button" variant="outline" onClick={copy} className="shrink-0">
-            {copied ? "Copied!" : "Copy"}
-          </Button>
-        </div>
+      <CardContent className="space-y-3">
+        {rows.map((row) => (
+          <div key={row.key} className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">
+              {row.market} / {row.locale}
+              {row.locale === store.google_content_language ? " (source)" : ""}
+            </p>
+            <div className="flex gap-2">
+              <Input readOnly value={row.url} className="font-mono text-xs" />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => copy(row.key, row.url)}
+                className="shrink-0"
+              >
+                {copiedKey === row.key ? "Copied!" : "Copy"}
+              </Button>
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
