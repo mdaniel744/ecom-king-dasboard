@@ -14,6 +14,7 @@ export function ok<T = undefined>(data?: T): ActionResult<T> {
 // the user (see the security audit note on error message hygiene).
 const KNOWN_DB_ERRORS: Record<string, string> = {
   "23505": "Something with this name or value already exists — try a different one.",
+  "23503": "This is still in use elsewhere (e.g. a product or collection references it) — remove those links first.",
 };
 
 /**

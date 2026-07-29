@@ -36,12 +36,83 @@ export type Store = {
 export type Translation = {
   id: string;
   store_id: string;
-  entity_type: "product" | "category" | "attribute_name" | "attribute_value";
+  entity_type: "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq";
   entity_id: string;
   field_name: string;
   locale: string;
   value: string;
   translator: "ai" | "human";
+  created_at: string;
+  updated_at: string;
+};
+
+export type Brand = {
+  id: string;
+  store_id: string;
+  name: string;
+  slug: string;
+  short_description: string | null;
+  long_description: string | null;
+  disclaimer: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  logo_light_url: string | null;
+  logo_dark_url: string | null;
+  hero_image_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Collection = {
+  id: string;
+  store_id: string;
+  brand_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Guide = {
+  id: string;
+  store_id: string;
+  title: string;
+  slug: string;
+  /** Free-form, store-defined (e.g. "Buying Guide", "Care Guide") — never a
+   * hardcoded platform enum, same principle as attribute vocabulary. */
+  category: string | null;
+  excerpt: string | null;
+  /** Markdown, not plain text — richer formatting than product descriptions. */
+  content: string | null;
+  published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GlossaryRuleType = "preserve" | "always_translate" | "never_translate";
+
+export type GlossaryTerm = {
+  id: string;
+  store_id: string;
+  original_term: string;
+  rule_type: GlossaryRuleType;
+  /** Per-locale override text, e.g. {"en": "Pre-owned", "de": "Gebraucht"}.
+   * Ignored for never_translate rules — those always output original_term. */
+  translations: Record<string, string>;
+  notes: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Faq = {
+  id: string;
+  store_id: string;
+  question: string;
+  answer: string;
+  category: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -110,9 +181,24 @@ export type Product = {
   image_alts: string[];
   attributes: Record<string, string>;
   brand: string | null;
+  /** Optional link to a structured brands row — only used by stores that
+   * have created real Brands (e.g. Kariv Glamour). The free-text `brand`
+   * column above still exists unchanged and is what Google Merchant sync
+   * reads; this is purely for storefront/dashboard display and filtering. */
+  brand_id: string | null;
+  /** Same idea as brand_id, for stores using structured Collections. */
+  collection_id: string | null;
+  /** Public-facing manufacturer reference (e.g. a watch reference number) —
+   * distinct from sku, which is internal-only and never shown to customers. */
+  reference_number: string | null;
   gtin: string | null;
   mpn: string | null;
   google_product_category: string | null;
+  /** Optional overrides for what's actually sent to Google — falls back to
+   * name/description when null. Lets a store write different copy for
+   * Google's algorithm vs. what a human visitor sees on the product page. */
+  google_title: string | null;
+  google_description: string | null;
   is_featured: boolean;
   badge: string | null;
   condition: ProductCondition;

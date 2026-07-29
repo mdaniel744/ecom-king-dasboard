@@ -31,13 +31,26 @@ const productPayloadSchema = z.object({
   brand: z.string().trim().max(200, "Brand is too long").nullable(),
   mpn: z.string().trim().max(200, "MPN is too long").nullable(),
   google_product_category: z.string().trim().max(500, "Google product category is too long").nullable(),
+  google_title: z.string().trim().max(150, "Google title is too long — Google truncates past 150 characters").nullable(),
+  google_description: z.string().trim().max(5000, "Google description is too long").nullable(),
   is_featured: z.boolean(),
   badge: z.string().trim().max(100, "Badge text is too long (max 100 characters)").nullable(),
   category_id: z.string().uuid("Choose a valid category").nullable(),
+  brand_id: z.string().uuid("Choose a valid brand").nullable(),
+  collection_id: z.string().uuid("Choose a valid collection").nullable(),
+  reference_number: z.string().trim().max(200, "Reference number is too long").nullable(),
   images: z.array(z.string().trim().min(1).max(2000)).max(20, "Maximum 20 images"),
   image_alts: z.array(z.string().trim().max(500)).max(20),
   attributes: z.record(z.string(), z.string()),
 });
+
+/** Confirms a brand_id/collection_id a form submitted actually belongs to
+ * this store, so a crafted request can't attach another store's brand. */
+async function assertOwnedByStore(table: "brands" | "collections", id: string | null, storeId: string) {
+  if (!id) return;
+  const { data } = await supabaseAdmin.from(table).select("id").eq("id", id).eq("store_id", storeId).maybeSingle();
+  if (!data) throw new Error(`That ${table === "brands" ? "brand" : "collection"} doesn't belong to this store.`);
+}
 
 function parseAttributes(formData: FormData): Record<string, string> {
   const keys = formData.getAll("attr_key") as string[];
@@ -61,12 +74,17 @@ function parseImageAlts(formData: FormData): string[] {
   return (formData.getAll("image_alts") as string[]).map((s) => s.trim());
 }
 
-function buildProductPayload(formData: FormData) {
+async function buildProductPayload(formData: FormData, storeId: string) {
   const name = (formData.get("name") as string)?.trim() ?? "";
   const rawSlug = (formData.get("slug") as string)?.trim();
   const priceRaw = formData.get("price") as string;
   const salePriceRaw = formData.get("sale_price") as string;
   const categoryId = formData.get("category_id") as string;
+  const brandId = (formData.get("brand_id") as string) || null;
+  const collectionId = (formData.get("collection_id") as string) || null;
+
+  await assertOwnedByStore("brands", brandId, storeId);
+  await assertOwnedByStore("collections", collectionId, storeId);
 
   return validate(productPayloadSchema, {
     name,
@@ -83,9 +101,14 @@ function buildProductPayload(formData: FormData) {
     brand: (formData.get("brand") as string) || null,
     mpn: (formData.get("mpn") as string) || null,
     google_product_category: (formData.get("google_product_category") as string) || null,
+    google_title: (formData.get("google_title") as string)?.trim() || null,
+    google_description: (formData.get("google_description") as string)?.trim() || null,
     is_featured: formData.get("is_featured") === "on",
     badge: (formData.get("badge") as string)?.trim() || null,
     category_id: categoryId || null,
+    brand_id: brandId,
+    collection_id: collectionId,
+    reference_number: (formData.get("reference_number") as string)?.trim() || null,
     images: parseImages(formData),
     image_alts: parseImageAlts(formData),
     attributes: parseAttributes(formData),
@@ -95,7 +118,7 @@ function buildProductPayload(formData: FormData) {
 export async function createProduct(formData: FormData): Promise<ActionResult> {
   try {
     const store = await getCurrentStore();
-    const payload = buildProductPayload(formData);
+    const payload = await buildProductPayload(formData, store.id);
 
     const { data: product, error } = await supabaseAdmin
       .from("products")
@@ -117,7 +140,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
   try {
     productId = validateId(productId);
     const store = await getCurrentStore();
-    const payload = buildProductPayload(formData);
+    const payload = await buildProductPayload(formData, store.id);
 
     const { data: product, error } = await supabaseAdmin
       .from("products")
@@ -149,6 +172,10 @@ async function syncProductTranslations(store: Store, product: Product) {
       short_description: product.short_description,
       description: product.description,
       badge: product.badge,
+      // Only translated when actually set — most products never set these,
+      // so this is a no-op for every product that doesn't use the override.
+      google_title: product.google_title,
+      google_description: product.google_description,
     },
   });
 }

@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAttributeDefs } from "@/lib/attribute-defs";
 import { ProductForm } from "@/app/dashboard/products/product-form";
 import { updateProduct } from "@/app/dashboard/products/actions";
-import type { Category, Product } from "@/lib/types";
+import type { Brand, Category, Collection, Product } from "@/lib/types";
 
 export default async function EditProductPage({
   params,
@@ -14,7 +14,7 @@ export default async function EditProductPage({
   const { id } = await params;
   const store = await getCurrentStore();
 
-  const [{ data: product }, { data: categories }, attributeDefs] = await Promise.all([
+  const [{ data: product }, { data: categories }, { data: brands }, { data: collections }, attributeDefs] = await Promise.all([
     supabaseAdmin
       .from("products")
       .select("*")
@@ -26,6 +26,8 @@ export default async function EditProductPage({
       .select("*")
       .eq("store_id", store.id)
       .order("name"),
+    supabaseAdmin.from("brands").select("*").eq("store_id", store.id).order("name"),
+    supabaseAdmin.from("collections").select("*").eq("store_id", store.id).order("name"),
     getAttributeDefs(store.id),
   ]);
 
@@ -36,8 +38,11 @@ export default async function EditProductPage({
       action={updateProduct.bind(null, id)}
       product={product as Product}
       categories={(categories ?? []) as Category[]}
+      brands={(brands ?? []) as Brand[]}
+      collections={(collections ?? []) as Collection[]}
       attributeDefs={attributeDefs}
       storeSourceLocale={store.google_content_language}
+      enabledLocales={store.enabled_locales}
     />
   );
 }

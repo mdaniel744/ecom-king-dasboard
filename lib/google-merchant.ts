@@ -110,9 +110,16 @@ export async function getTranslationsByLocale(
   store: Store,
   product: Product
 ): Promise<Map<string, TranslatedFields>> {
+  // google_title/google_description, when set, are what actually gets sent
+  // to Google — a store can write different copy for Google's algorithm
+  // than what a human visitor sees. Falls back to name/description when
+  // unset, which is every product on every store before this field existed.
+  const titleFieldName = product.google_title ? "google_title" : "name";
+  const descriptionFieldName = product.google_description ? "google_description" : "description";
+
   const sourceFields: TranslatedFields = {
-    name: product.name,
-    description: product.description ?? product.name,
+    name: product.google_title || product.name,
+    description: product.google_description || product.description || product.name,
     short_description: product.short_description,
   };
 
@@ -129,8 +136,8 @@ export async function getTranslationsByLocale(
   for (const row of rows ?? []) {
     if (!map.has(row.locale)) map.set(row.locale, { ...sourceFields });
     const entry = map.get(row.locale)!;
-    if (row.field_name === "name") entry.name = row.value;
-    if (row.field_name === "description") entry.description = row.value;
+    if (row.field_name === titleFieldName) entry.name = row.value;
+    if (row.field_name === descriptionFieldName) entry.description = row.value;
     if (row.field_name === "short_description") entry.short_description = row.value;
   }
 

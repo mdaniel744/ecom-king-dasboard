@@ -20,8 +20,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldError } from "@/components/dashboard/field-error";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
+import { TranslationEditor } from "@/components/dashboard/translation-editor";
 import { FieldInfo } from "@/components/ui/field-info";
-import type { Category, Product } from "@/lib/types";
+import type { Brand, Category, Collection, Product } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
@@ -35,11 +36,23 @@ type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
   product?: Product;
   categories: Category[];
+  brands?: Brand[];
+  collections?: Collection[];
   attributeDefs: AttributeDef[];
   storeSourceLocale?: string;
+  enabledLocales?: string[];
 };
 
-export function ProductForm({ action, product, categories, attributeDefs, storeSourceLocale = "en" }: Props) {
+export function ProductForm({
+  action,
+  product,
+  categories,
+  brands = [],
+  collections = [],
+  attributeDefs,
+  storeSourceLocale = "en",
+  enabledLocales = [],
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +64,8 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [brand, setBrand] = useState(product?.brand ?? "");
+  const [selectedBrandId, setSelectedBrandId] = useState(product?.brand_id ?? "");
+  const [selectedCollectionId, setSelectedCollectionId] = useState(product?.collection_id ?? "");
   const [mpn, setMpn] = useState(product?.mpn ?? "");
   const [isGeneratingMpn, setIsGeneratingMpn] = useState(false);
   const [googleProductCategory, setGoogleProductCategory] = useState(product?.google_product_category ?? "");
@@ -659,8 +674,81 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                 <Input id="sku" name="sku" defaultValue={product?.sku ?? ""} />
                 <FieldError name="sku" errors={fieldErrors} />
               </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="reference_number">Reference Number <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                  <FieldInfo
+                    title="Reference Number"
+                    description="The manufacturer's own public reference/model number for this exact item (e.g. a watch reference number) — shown to customers and searchable, unlike SKU which is internal-only. Leave blank if your niche doesn't use these."
+                  />
+                </div>
+                <Input id="reference_number" name="reference_number" defaultValue={product?.reference_number ?? ""} />
+                <FieldError name="reference_number" errors={fieldErrors} />
+              </div>
             </CardContent>
           </Card>
+
+          {brands.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Brand &amp; Collection</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Selecting a brand also fills in the Brand field below for Google.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="brand_id">Brand</Label>
+                  <Select
+                    name="brand_id"
+                    value={selectedBrandId}
+                    onValueChange={(value) => {
+                      setSelectedBrandId(value);
+                      setSelectedCollectionId("");
+                      const match = brands.find((b) => b.id === value);
+                      if (match) setBrand(match.name);
+                    }}
+                  >
+                    <SelectTrigger id="brand_id">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {brands.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedBrandId && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="collection_id">Collection <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                    <Select
+                      name="collection_id"
+                      value={selectedCollectionId}
+                      onValueChange={setSelectedCollectionId}
+                    >
+                      <SelectTrigger id="collection_id">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {collections
+                          .filter((c) => c.brand_id === selectedBrandId)
+                          .map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -747,9 +835,57 @@ export function ProductForm({ action, product, categories, attributeDefs, storeS
                 />
                 <FieldError name="google_product_category" errors={fieldErrors} />
               </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="google_title">Google Title Override <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                  <FieldInfo
+                    title="Google Title Override"
+                    description="Sent to Google instead of the main Title above, if filled in. Use this when you want different wording optimized for Google's search algorithm than what a human visitor sees on the product page. Leave blank to just use the Title for both."
+                  />
+                </div>
+                <Input
+                  id="google_title"
+                  name="google_title"
+                  defaultValue={product?.google_title ?? ""}
+                  placeholder="Leave blank to use Title"
+                />
+                <FieldError name="google_title" errors={fieldErrors} />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="google_description">Google Description Override <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                  <FieldInfo
+                    title="Google Description Override"
+                    description="Sent to Google instead of the main Description above, if filled in. Same idea as Google Title Override — separate wording for Google vs. your storefront. Leave blank to just use the Description for both."
+                  />
+                </div>
+                <Textarea
+                  id="google_description"
+                  name="google_description"
+                  rows={3}
+                  defaultValue={product?.google_description ?? ""}
+                  placeholder="Leave blank to use Description"
+                />
+                <FieldError name="google_description" errors={fieldErrors} />
+              </div>
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <TranslationEditor
+          entityType="product"
+          entityId={product?.id}
+          enabledLocales={enabledLocales}
+          fields={[
+            { name: "name", label: "Title" },
+            { name: "short_description", label: "Short Description" },
+            { name: "description", label: "Description", multiline: true },
+          ]}
+        />
       </div>
     </form>
   );

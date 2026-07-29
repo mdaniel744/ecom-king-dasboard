@@ -1,4 +1,5 @@
 import "server-only";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 
@@ -14,7 +15,53 @@ type TranslateParams = {
   /** e.g. "Containers" or "Containers > Open Side" — the store's own category
    * tree, so industry-specific terms translate correctly instead of generically. */
   categoryPath?: string | null;
+  /** When provided, the store's active Glossary terms are fetched and folded
+   * into the prompt, so brand/product terminology stays consistent instead
+   * of being reworded differently on every translation call. Omitting this
+   * (or a store with zero glossary rows) is a complete no-op — existing
+   * behavior for every store without a glossary is unchanged. */
+  storeId?: string;
 };
+
+type GlossaryRow = {
+  original_term: string;
+  rule_type: "preserve" | "always_translate" | "never_translate";
+  translations: Record<string, string>;
+};
+
+/**
+ * Builds the glossary portion of the system prompt for this store and
+ * target locale. Never-translate terms are passed through verbatim in
+ * every language; preserve/always-translate terms only produce an
+ * instruction when this specific locale has an override defined — a term
+ * missing a translation for a newly-added locale is silently skipped
+ * rather than guessed at.
+ */
+async function buildGlossaryInstructions(storeId: string, targetLocale: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("glossary")
+    .select("original_term, rule_type, translations")
+    .eq("store_id", storeId)
+    .eq("active", true);
+
+  const rows = (data ?? []) as GlossaryRow[];
+  if (rows.length === 0) return null;
+
+  const lines: string[] = [];
+  for (const row of rows) {
+    if (row.rule_type === "never_translate") {
+      lines.push(`- Keep "${row.original_term}" exactly as written — do not translate it.`);
+      continue;
+    }
+    const override = row.translations?.[targetLocale];
+    if (override) {
+      lines.push(`- Always translate "${row.original_term}" as "${override}".`);
+    }
+  }
+
+  if (lines.length === 0) return null;
+  return `Follow these store-specific terminology rules exactly:\n${lines.join("\n")}`;
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -71,6 +118,7 @@ export async function translateText({
   targetLocale,
   fieldRole,
   categoryPath,
+  storeId,
 }: TranslateParams): Promise<string> {
   if (!text.trim()) return "";
 
@@ -79,12 +127,15 @@ export async function translateText({
     throw new TranslationError("DEEPSEEK_API_KEY is not set.");
   }
 
+  const glossaryInstructions = storeId ? await buildGlossaryInstructions(storeId, targetLocale) : null;
+
   const systemPrompt = [
     `You are a professional e-commerce translator.`,
     `Translate the user's text from "${sourceLocale}" to "${targetLocale}".`,
     `This text is a "${fieldRole}" on an online store product/category page.`,
     categoryPath ? `It belongs to the category "${categoryPath}" — use terminology appropriate to that industry.` : null,
     `Keep tone and length appropriate for e-commerce. Preserve any numbers, units, and proper nouns exactly.`,
+    glossaryInstructions,
     `Return ONLY the translated text — no quotes, no explanation, no original text.`,
   ]
     .filter(Boolean)
