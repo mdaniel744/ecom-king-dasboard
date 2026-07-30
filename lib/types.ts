@@ -36,7 +36,7 @@ export type Store = {
 export type Translation = {
   id: string;
   store_id: string;
-  entity_type: "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq";
+  entity_type: "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
   entity_id: string;
   field_name: string;
   locale: string;
@@ -113,6 +113,48 @@ export type Faq = {
   question: string;
   answer: string;
   category: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LegalPage = {
+  id: string;
+  store_id: string;
+  title: string;
+  slug: string;
+  content: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DealerApplicationStatus = "pending" | "approved" | "rejected";
+
+export type DealerApplication = {
+  id: string;
+  store_id: string;
+  dealer_user_id: string;
+  company_name: string;
+  contact_email: string;
+  phone: string | null;
+  tax_id: string | null;
+  website: string | null;
+  address: string | null;
+  country: string | null;
+  message: string | null;
+  status: DealerApplicationStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WebsiteString = {
+  id: string;
+  store_id: string;
+  key: string;
+  default_value: string;
   created_at: string;
   updated_at: string;
 };

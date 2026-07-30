@@ -10,6 +10,9 @@ import {
   BookOpen,
   HelpCircle,
   Languages,
+  Scale,
+  UserCheck,
+  Type,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +32,9 @@ export const navItems: NavItem[] = [
   { label: "Guides", href: "/dashboard/guides", icon: BookOpen },
   { label: "FAQ", href: "/dashboard/faqs", icon: HelpCircle },
   { label: "Glossary", href: "/dashboard/glossary", icon: Languages },
+  { label: "Legal Pages", href: "/dashboard/legal-pages", icon: Scale },
+  { label: "Dealer Applications", href: "/dashboard/dealer-applications", icon: UserCheck },
+  { label: "Strings", href: "/dashboard/website-strings", icon: Type },
   { label: "Inquiries", href: "/dashboard/inquiries", icon: Inbox },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];

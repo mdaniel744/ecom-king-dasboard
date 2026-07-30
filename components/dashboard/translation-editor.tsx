@@ -15,7 +15,7 @@ import {
   resetTranslationToAI,
 } from "@/app/dashboard/translations/actions";
 
-type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq";
+type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
 
 type FieldDef = {
   name: string;

@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 
-const entityTypeSchema = z.enum(["product", "category", "attribute_name", "attribute_value", "brand", "collection", "guide", "faq"]);
+const entityTypeSchema = z.enum(["product", "category", "attribute_name", "attribute_value", "brand", "collection", "guide", "faq", "legal_page", "website_string"]);
 
 /**
  * Every translation row (any locale) for one entity, keyed by locale then

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { translateText } from "@/lib/translate";
 import type { Store } from "@/lib/types";
 
-type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq";
+type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
 
 type SyncParams = {
   store: Store;
