@@ -73,11 +73,20 @@ function getAuthClient(): JWT {
 }
 
 /**
- * A store's delivery markets (Google feed labels) and content locales,
- * combined into every market x locale pair a product must be individually
- * submitted to. Source language is always included alongside enabled
- * translation targets, and de-duplicated in case a store's enabled_locales
- * accidentally includes its own source language.
+ * A store's delivery markets (Google feed labels) and the locales actually
+ * submitted to Google, combined into every market x locale pair a product
+ * must be individually submitted to. Source language is always included.
+ *
+ * Locales come from google_push_locales, NOT enabled_locales directly —
+ * those are two separate settings. enabled_locales controls what gets
+ * AI-translated (for the storefront); google_push_locales is the subset of
+ * those a store has chosen to actually go live on Google right now. Empty
+ * google_push_locales means "hasn't been narrowed down yet," so it falls
+ * back to enabled_locales — this is what keeps every store's behavior
+ * unchanged until they explicitly opt into a narrower set in Settings.
+ * The XML feed (Settings page's Feed URL card) intentionally does NOT use
+ * this function — it still enumerates every enabled_locales combo, since a
+ * store picks which feed URLs to actually add to Merchant Center by hand.
  */
 function getMarketsAndLocales(store: Store): { markets: string[]; locales: string[] } {
   const markets =
@@ -86,9 +95,11 @@ function getMarketsAndLocales(store: Store): { markets: string[]; locales: strin
       : [store.google_feed_label];
 
   const sourceLocale = store.google_content_language || "en";
-  const locales = Array.from(
-    new Set([sourceLocale, ...(store.enabled_locales ?? [])])
-  );
+  const pushLocales =
+    store.google_push_locales && store.google_push_locales.length > 0
+      ? store.google_push_locales
+      : store.enabled_locales ?? [];
+  const locales = Array.from(new Set([sourceLocale, ...pushLocales]));
 
   return { markets, locales };
 }

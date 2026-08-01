@@ -23,6 +23,7 @@ const settingsSchema = z.object({
     .regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens — no slashes or spaces"),
   sourceLocaleHasPrefix: z.boolean(),
   enabledLocales: z.array(z.string().trim().min(2).max(10)).max(20),
+  googlePushLocales: z.array(z.string().trim().min(2).max(10)).max(20),
   notificationEmail: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? null : v),
     z.string().trim().max(255).email().nullable()
@@ -50,6 +51,13 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
     const productUrlPathRaw = (formData.get("product_url_path") as string)?.trim() || "products";
     const sourceLocaleHasPrefixRaw = formData.get("source_locale_has_prefix") === "on";
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
+    // Only checkboxes for currently-enabled locales are ever rendered, but
+    // clamp here too in case enabledLocales was narrowed in the same submit
+    // (a stale push-locale value shouldn't survive its translation target
+    // being unchecked in the same save).
+    const googlePushLocalesRaw = (formData.getAll("google_push_locales") as string[]).filter((l) =>
+      enabledLocalesRaw.includes(l)
+    );
     const notificationEmailRaw = (formData.get("notification_email") as string)?.trim() ?? "";
 
     const {
@@ -63,6 +71,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       productUrlPath,
       sourceLocaleHasPrefix,
       enabledLocales,
+      googlePushLocales,
       notificationEmail,
     } = validate(settingsSchema, {
       name: nameRaw,
@@ -75,6 +84,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       productUrlPath: productUrlPathRaw,
       sourceLocaleHasPrefix: sourceLocaleHasPrefixRaw,
       enabledLocales: enabledLocalesRaw,
+      googlePushLocales: googlePushLocalesRaw,
       notificationEmail: notificationEmailRaw,
     });
     const { error } = await supabaseAdmin
@@ -90,6 +100,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         product_url_path: productUrlPath,
         source_locale_has_prefix: sourceLocaleHasPrefix,
         enabled_locales: enabledLocales,
+        google_push_locales: googlePushLocales,
         notification_email: notificationEmail,
       })
       .eq("id", store.id);

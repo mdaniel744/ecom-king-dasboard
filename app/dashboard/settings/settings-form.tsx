@@ -22,6 +22,7 @@ import type { Store } from "@/lib/types";
 export function SettingsForm({ store }: { store: Store }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [enabledLocales, setEnabledLocales] = useState<string[]>(store.enabled_locales ?? []);
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -270,12 +271,62 @@ export function SettingsForm({ store }: { store: Store }) {
                   name="enabled_locales"
                   value={option.value}
                   defaultChecked={store.enabled_locales?.includes(option.value)}
+                  onChange={(e) => {
+                    setEnabledLocales((prev) =>
+                      e.target.checked
+                        ? [...prev, option.value]
+                        : prev.filter((l) => l !== option.value)
+                    );
+                  }}
                   className="h-4 w-4 rounded border-border accent-primary"
                 />
                 {option.label}
               </label>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Push to Google</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Which translated languages actually go live on Google — via the Sync button and the
+            live API push — right now. This is separate from Translation above: uncheck a
+            language here to keep translating it for your storefront without submitting it to
+            Google yet. Your Content Language ({store.google_content_language}) is always
+            submitted regardless of what&apos;s checked below. Note: unchecking every box below
+            currently falls back to pushing every translated language — there&apos;s no way to
+            pause Google sync entirely from here yet.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {enabledLocales.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Check at least one language above under Translation first.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+              {CONTENT_LANGUAGE_OPTIONS.filter((option) => enabledLocales.includes(option.value)).map(
+                (option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      name="google_push_locales"
+                      value={option.value}
+                      defaultChecked={
+                        store.google_push_locales.length > 0
+                          ? store.google_push_locales.includes(option.value)
+                          : true
+                      }
+                      className="h-4 w-4 rounded border-border accent-primary"
+                    />
+                    {option.label}
+                  </label>
+                )
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
