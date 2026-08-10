@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
+import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
 import { createCollection, updateCollection } from "@/app/dashboard/collections/actions";
 import type { Brand, Collection } from "@/lib/types";
 
@@ -43,6 +44,7 @@ export function CollectionDialog({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const [imageUrl, setImageUrl] = useState(collection?.image_url ?? "");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -115,8 +117,9 @@ export function CollectionDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="image_url">Collection Image <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-            <Input id="image_url" name="image_url" defaultValue={collection?.image_url ?? ""} placeholder="https://..." />
+            <Label>Collection Image <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+            <input type="hidden" name="image_url" value={imageUrl} />
+            <ImageUploadInput value={imageUrl} onChange={setImageUrl} folder="collections" />
           </div>
 
           <DialogFooter>

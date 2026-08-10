@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
+import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
 import { createBrand, updateBrand } from "@/app/dashboard/brands/actions";
 import type { Brand } from "@/lib/types";
 
@@ -34,6 +35,10 @@ export function BrandDialog({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const [logoLightUrl, setLogoLightUrl] = useState(brand?.logo_light_url ?? "");
+  const [logoDarkUrl, setLogoDarkUrl] = useState(brand?.logo_dark_url ?? "");
+  const [heroImageUrl, setHeroImageUrl] = useState(brand?.hero_image_url ?? "");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -118,18 +123,21 @@ export function BrandDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="logo_light_url">Logo (light background)</Label>
-              <Input id="logo_light_url" name="logo_light_url" defaultValue={brand?.logo_light_url ?? ""} placeholder="https://..." />
+              <Label>Logo (light background)</Label>
+              <input type="hidden" name="logo_light_url" value={logoLightUrl} />
+              <ImageUploadInput value={logoLightUrl} onChange={setLogoLightUrl} folder="brands" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="logo_dark_url">Logo (dark background)</Label>
-              <Input id="logo_dark_url" name="logo_dark_url" defaultValue={brand?.logo_dark_url ?? ""} placeholder="https://..." />
+              <Label>Logo (dark background)</Label>
+              <input type="hidden" name="logo_dark_url" value={logoDarkUrl} />
+              <ImageUploadInput value={logoDarkUrl} onChange={setLogoDarkUrl} folder="brands" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="hero_image_url">Hero Image <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-            <Input id="hero_image_url" name="hero_image_url" defaultValue={brand?.hero_image_url ?? ""} placeholder="https://..." />
+            <Label>Hero Image <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+            <input type="hidden" name="hero_image_url" value={heroImageUrl} />
+            <ImageUploadInput value={heroImageUrl} onChange={setHeroImageUrl} folder="brands" />
           </div>
 
           <div className="space-y-1.5">

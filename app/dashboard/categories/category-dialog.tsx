@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
+import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
 import { createCategory, updateCategory } from "@/app/dashboard/categories/actions";
 import type { Category } from "@/lib/types";
 
@@ -44,6 +45,7 @@ export function CategoryDialog({
 
   const [catName, setCatName] = useState(category?.name ?? "");
   const [catDesc, setCatDesc] = useState(category?.description ?? "");
+  const [imageUrl, setImageUrl] = useState(category?.image_url ?? "");
   const [metaTitle, setMetaTitle] = useState(category?.meta_title ?? "");
   const [metaDesc, setMetaDesc] = useState(category?.meta_description ?? "");
 
@@ -127,13 +129,9 @@ export function CategoryDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="image_url">Image URL</Label>
-            <Input
-              id="image_url"
-              name="image_url"
-              defaultValue={category?.image_url ?? ""}
-              placeholder="https://... (shown on the storefront category card)"
-            />
+            <Label>Image <span className="text-xs font-normal text-muted-foreground">(shown on the storefront category card)</span></Label>
+            <input type="hidden" name="image_url" value={imageUrl} />
+            <ImageUploadInput value={imageUrl} onChange={setImageUrl} folder="categories" />
           </div>
 
           <div className="space-y-1.5">

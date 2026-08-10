@@ -21,6 +21,7 @@ import { FieldError } from "@/components/dashboard/field-error";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
+import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
 import { FieldInfo } from "@/components/ui/field-info";
 import type { Brand, Category, Collection, Product } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
@@ -105,7 +106,7 @@ export function ProductForm({
         return;
       }
       if (filledImages.length === 0) {
-        toast.error("Active products need at least one image — Google won't display a product without a photo. Add an image URL or save as Draft first.");
+        toast.error("Active products need at least one image — Google won't display a product without a photo. Upload an image or save as Draft first.");
         return;
       }
       if (!description.trim()) {
@@ -402,7 +403,7 @@ export function ProductForm({
                 <CardTitle className="text-base">Images</CardTitle>
                 <FieldInfo
                   title="Product Images & Alt Text"
-                  description="Photos of your product. The first image is the main one sent to Google as the primary image. Paste a hosted URL per box (e.g. from ImageKit). Each image has an alt text field — this is the written description Google reads when crawling your site and is one of the strongest image SEO signals. Use Generate to auto-fill it from your product details, or write your own. Tip: name your files descriptively in ImageKit before uploading (e.g. 20ft-container-front.webp) for even stronger SEO."
+                  description="Photos of your product. The first image is the main one sent to Google as the primary image. Click Choose Image to upload a photo straight from your device. Each image has an alt text field — this is the written description Google reads when crawling your site and is one of the strongest image SEO signals. Use Generate to auto-fill it from your product details, or write your own."
                 />
               </div>
               <p className="text-sm text-muted-foreground">
@@ -412,12 +413,13 @@ export function ProductForm({
             <CardContent className="space-y-4">
               {images.map((url, i) => (
                 <div key={i} className="space-y-1.5">
-                  <div className="flex gap-2">
-                    <Input
-                      name="images"
+                  <div className="flex items-center gap-2">
+                    <input type="hidden" name="images" value={url} />
+                    <ImageUploadInput
                       value={url}
-                      onChange={(e) => updateImage(i, e.target.value)}
-                      placeholder="https://..."
+                      onChange={(newUrl) => updateImage(i, newUrl)}
+                      folder="products"
+                      emptyLabel={i === 0 ? "Choose Main Image" : "Choose Image"}
                     />
                     <Button
                       type="button"
