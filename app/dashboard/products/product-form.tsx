@@ -22,6 +22,7 @@ import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
 import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
+import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
 import { FieldInfo } from "@/components/ui/field-info";
 import type { Brand, Category, Collection, Product } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
@@ -32,6 +33,7 @@ import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
 import { generateImageAlt } from "./generate-alt-action";
 import { uploadDashboardImage } from "@/app/dashboard/upload-image-action";
+import { stripHtml } from "@/lib/html";
 import { slugify } from "@/lib/slug";
 
 type Props = {
@@ -112,7 +114,7 @@ export function ProductForm({
         toast.error("Active products need at least one image — Google won't display a product without a photo. Upload an image or save as Draft first.");
         return;
       }
-      if (!description.trim()) {
+      if (!stripHtml(description).trim()) {
         toast.warning("No description yet — Google uses it to match your product to search queries. You can save now, but add one before syncing for best results.");
       }
     }
@@ -128,6 +130,20 @@ export function ProductForm({
         toast.error(result.error);
       }
     });
+  }
+
+  // AI Write returns plain text; the description field is rich-text HTML,
+  // so wrap each paragraph in <p> (escaping first) rather than dropping raw
+  // plain text into the editor as one unbroken line.
+  function plainTextToParagraphHtml(text: string): string {
+    const escape = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return text
+      .split(/\n{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => `<p>${escape(p)}</p>`)
+      .join("");
   }
 
   function updateImage(index: number, newValue: string) {
@@ -382,16 +398,15 @@ export function ProductForm({
                       description="The full product description shown on the product detail page and sent to Google Shopping. Be detailed and accurate — include materials, dimensions, certifications, and use cases. Google uses this to match your product to search queries. Minimum 20 characters for Google approval."
                     />
                   </div>
-                  <AIWriteButton getValue={() => description} onResult={setDescription} fieldRole="description" defaultLocale={storeSourceLocale} />
+                  <AIWriteButton
+                    getValue={() => stripHtml(description)}
+                    onResult={(text) => setDescription(plainTextToParagraphHtml(text))}
+                    fieldRole="description"
+                    defaultLocale={storeSourceLocale}
+                  />
                 </div>
-                <Textarea
-                  id="description"
-                  name="description"
-                  rows={5}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Full product description..."
-                />
+                <input type="hidden" name="description" value={description} />
+                <RichTextEditor value={description} onChange={setDescription} placeholder="Full product description..." />
                 <FieldError name="description" errors={fieldErrors} />
               </div>
             </CardContent>

@@ -1,4 +1,5 @@
 import type { Product, Store } from "@/lib/types";
+import { stripHtml } from "@/lib/html";
 
 export type RuleSeverity = "error" | "warning";
 
@@ -145,7 +146,11 @@ export function checkProductForMerchant(product: Product, store: Store): RuleIss
     }
   }
 
-  if (!product.description?.trim()) {
+  // description is rich-text HTML; every check here (length limit, caps,
+  // promotional language) is about what Google actually sees once we strip
+  // markup before sending it, not the raw HTML byte count.
+  const plainDescription = stripHtml(product.description ?? "");
+  if (!plainDescription.trim()) {
     issues.push({
       field: "description",
       code: "missing_description",
@@ -153,15 +158,15 @@ export function checkProductForMerchant(product: Product, store: Store): RuleIss
       severity: "warning",
     });
   } else {
-    if (product.description.length > 5000) {
+    if (plainDescription.length > 5000) {
       issues.push({
         field: "description",
         code: "description_too_long",
-        message: `Description is ${product.description.length} characters — Google's limit is 5000.`,
+        message: `Description is ${plainDescription.length} characters — Google's limit is 5000.`,
         severity: "error",
       });
     }
-    if (isShoutingCaps(product.description)) {
+    if (isShoutingCaps(plainDescription)) {
       issues.push({
         field: "description",
         code: "description_all_caps",
@@ -169,7 +174,7 @@ export function checkProductForMerchant(product: Product, store: Store): RuleIss
         severity: "warning",
       });
     }
-    const promo = findPromotionalMatch(product.description);
+    const promo = findPromotionalMatch(plainDescription);
     if (promo) {
       issues.push({
         field: "description",

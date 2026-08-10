@@ -21,6 +21,10 @@ type TranslateParams = {
    * (or a store with zero glossary rows) is a complete no-op — existing
    * behavior for every store without a glossary is unchanged. */
   storeId?: string;
+  /** True when `text` is rich-text HTML (e.g. product description) rather
+   * than a plain string — adds explicit tag-preservation instructions so
+   * DeepSeek translates only the visible text and leaves markup untouched. */
+  isHtml?: boolean;
 };
 
 type GlossaryRow = {
@@ -119,6 +123,7 @@ export async function translateText({
   fieldRole,
   categoryPath,
   storeId,
+  isHtml,
 }: TranslateParams): Promise<string> {
   if (!text.trim()) return "";
 
@@ -136,7 +141,9 @@ export async function translateText({
     categoryPath ? `It belongs to the category "${categoryPath}" — use terminology appropriate to that industry.` : null,
     `Keep tone and length appropriate for e-commerce. Preserve any numbers, units, and proper nouns exactly.`,
     glossaryInstructions,
-    `Return ONLY the translated text — no quotes, no explanation, no original text.`,
+    isHtml
+      ? `This text contains HTML markup. Preserve every HTML tag, attribute, and the exact tag structure unchanged — do not add, remove, reorder, or alter any tag. Translate ONLY the human-readable text between tags. Return ONLY the resulting HTML — no markdown code fences, no explanation, no original text.`
+      : `Return ONLY the translated text — no quotes, no explanation, no original text.`,
   ]
     .filter(Boolean)
     .join(" ");

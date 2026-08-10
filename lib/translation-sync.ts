@@ -11,6 +11,10 @@ type SyncParams = {
   entityId: string;
   fields: Record<string, string | null | undefined>;
   categoryPath?: string | null;
+  /** Names of fields (e.g. "description") that hold rich-text HTML rather
+   * than plain strings — translated with tag-preservation instructions
+   * instead of the default plain-text prompt. */
+  htmlFields?: string[];
 };
 
 /**
@@ -50,6 +54,7 @@ export async function syncTranslations({
   entityId,
   fields,
   categoryPath,
+  htmlFields = [],
 }: SyncParams): Promise<void> {
   const sourceLocale = store.google_content_language || "en";
   const targetLocales = (store.enabled_locales ?? []).filter((locale) => locale !== sourceLocale);
@@ -74,6 +79,7 @@ export async function syncTranslations({
             fieldRole: fieldName,
             categoryPath,
             storeId: store.id,
+            isHtml: htmlFields.includes(fieldName),
           });
 
           await supabaseAdmin.from("translations").upsert(

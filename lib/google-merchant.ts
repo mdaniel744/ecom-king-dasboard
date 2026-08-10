@@ -3,6 +3,7 @@ import { JWT } from "google-auth-library";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Product, ProductCondition, Store } from "@/lib/types";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
+import { stripHtml } from "@/lib/html";
 
 const MERCHANT_API_BASE = "https://merchantapi.googleapis.com/products/v1";
 
@@ -130,7 +131,11 @@ export async function getTranslationsByLocale(
 
   const sourceFields: TranslatedFields = {
     name: product.google_title || product.name,
-    description: product.google_description || product.description || product.name,
+    // description is rich-text HTML (see product-form.tsx's RichTextEditor)
+    // — Google's spec wants plain text, so it's always stripped here
+    // regardless of source. stripHtml is a no-op on already-plain text
+    // (e.g. google_description overrides), so this is safe either way.
+    description: stripHtml(product.google_description || product.description || product.name),
     short_description: product.short_description,
   };
 
@@ -148,7 +153,7 @@ export async function getTranslationsByLocale(
     if (!map.has(row.locale)) map.set(row.locale, { ...sourceFields });
     const entry = map.get(row.locale)!;
     if (row.field_name === titleFieldName) entry.name = row.value;
-    if (row.field_name === descriptionFieldName) entry.description = row.value;
+    if (row.field_name === descriptionFieldName) entry.description = stripHtml(row.value);
     if (row.field_name === "short_description") entry.short_description = row.value;
   }
 

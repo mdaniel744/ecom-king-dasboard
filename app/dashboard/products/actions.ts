@@ -167,6 +167,7 @@ async function syncProductTranslations(store: Store, product: Product) {
     entityType: "product",
     entityId: product.id,
     categoryPath,
+    htmlFields: ["description"],
     fields: {
       name: product.name,
       short_description: product.short_description,
