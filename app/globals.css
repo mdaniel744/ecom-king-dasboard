@@ -95,3 +95,55 @@
 .cl-footerAction {
   display: none !important;
 }
+
+/* Tiptap's table extension renders bare <table>/<tr>/<td> markup with no
+   visible grid of its own — the generic `prose` typography class (meant for
+   read-only display) doesn't cover Tiptap's editing-specific table markup
+   (column resize handle, selected-cell overlay). This is Tiptap's own
+   documented requirement, not optional polish. */
+.rich-text-content .tiptap table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  overflow: hidden;
+  table-layout: fixed;
+  width: 100%;
+}
+.rich-text-content .tiptap table td,
+.rich-text-content .tiptap table th {
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  min-width: 1em;
+  padding: 6px 10px;
+  position: relative;
+  vertical-align: top;
+}
+.rich-text-content .tiptap table th {
+  background-color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+.rich-text-content .tiptap table .selectedCell:after {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+.rich-text-content .tiptap table .column-resize-handle {
+  background-color: var(--primary);
+  bottom: -2px;
+  pointer-events: none;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 4px;
+}
+.rich-text-content .tiptap img {
+  border-radius: var(--radius-md);
+  max-width: 100%;
+}
+.rich-text-content .tiptap img.ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

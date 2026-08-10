@@ -8,6 +8,7 @@ export function stripHtml(html: string): string {
   if (!html) return "";
   return html
     .replace(/<li[^>]*>/gi, "- ")
+    .replace(/\n?<img[^>]*>\n?/gi, "\n") // inline images have no plain-text form to keep
     .replace(/<\/(p|li|h[1-6]|blockquote|tr)>/gi, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")

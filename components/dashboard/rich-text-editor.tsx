@@ -1,11 +1,14 @@
 "use client";
 
+import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
+import ImageExtension from "@tiptap/extension-image";
 import { Table } from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
@@ -28,8 +31,11 @@ import {
   Highlighter,
   Undo2,
   Redo2,
+  ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { uploadDashboardImage } from "@/app/dashboard/upload-image-action";
 
 type Props = {
   value: string;
@@ -73,6 +79,9 @@ function ToolbarButton({
  * renders unchanged (plain text has no tags to break).
  */
 export function RichTextEditor({ value, onChange, placeholder }: Props) {
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -81,6 +90,7 @@ export function RichTextEditor({ value, onChange, placeholder }: Props) {
       Highlight,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Link.configure({ openOnClick: false, autolink: true }),
+      ImageExtension,
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -89,7 +99,7 @@ export function RichTextEditor({ value, onChange, placeholder }: Props) {
     content: value,
     editorProps: {
       attributes: {
-        class: "prose prose-sm max-w-none min-h-[180px] px-3 py-2 focus:outline-none",
+        class: "tiptap prose prose-sm max-w-none min-h-[180px] px-3 py-2 focus:outline-none",
       },
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
@@ -108,8 +118,26 @@ export function RichTextEditor({ value, onChange, placeholder }: Props) {
     editor!.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
   }
 
+  async function handleMediaFile(file: File) {
+    setIsUploadingMedia(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("folder", "product-content");
+      const result = await uploadDashboardImage(formData);
+      if (result.url) {
+        editor!.chain().focus().setImage({ src: result.url, alt: "" }).run();
+      } else {
+        toast.error(result.error ?? "Upload failed.");
+      }
+    } finally {
+      setIsUploadingMedia(false);
+      if (mediaInputRef.current) mediaInputRef.current.value = "";
+    }
+  }
+
   return (
-    <div className="rounded-md border border-input bg-transparent">
+    <div className="rich-text-content rounded-md border border-input bg-transparent">
       <div className="flex flex-wrap items-center gap-0.5 border-b border-input p-1">
         <ToolbarButton title="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
           <Bold className="h-3.5 w-3.5" />
@@ -122,6 +150,19 @@ export function RichTextEditor({ value, onChange, placeholder }: Props) {
         </ToolbarButton>
         <ToolbarButton title="Highlight" active={editor.isActive("highlight")} onClick={() => editor.chain().focus().toggleHighlight().run()}>
           <Highlighter className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <input
+          ref={mediaInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleMediaFile(file);
+          }}
+        />
+        <ToolbarButton title="Add media" disabled={isUploadingMedia} onClick={() => mediaInputRef.current?.click()}>
+          {isUploadingMedia ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
         </ToolbarButton>
 
         <div className="mx-1 h-4 w-px bg-border" />
