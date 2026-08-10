@@ -313,13 +313,15 @@ export type Order = {
   updated_at: string;
 };
 
-export type OrderMessageSender = "buyer" | "admin";
+export type OrderMessageSender = "buyer" | "admin" | "system";
 
 export type OrderMessage = {
   id: string;
   order_id: string;
   sender: OrderMessageSender;
   sender_user_id: string;
+  subject: string | null;
+  kind: string;
   message: string;
   is_read: boolean;
   created_at: string;
