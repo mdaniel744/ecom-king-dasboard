@@ -272,3 +272,85 @@ export type Inquiry = {
   status: InquiryStatus;
   created_at: string;
 };
+
+export type OrderEscrowStatus =
+  | "pending_review"
+  | "dealer_accepted"
+  | "funds_secured"
+  | "shipped"
+  | "verified"
+  | "funds_released"
+  | "cancelled";
+export type OrderPaymentMethod = "bank_transfer" | "crypto";
+export type OrderShippingStatus = "not_shipped" | "shipped" | "delivered";
+
+export type OrderLineItem = {
+  product_id: string;
+  title: string;
+  price: number;
+  currency: string;
+  image: string | null;
+  quantity: number;
+};
+
+export type Order = {
+  id: string;
+  store_id: string;
+  buyer_user_id: string;
+  dealer_user_id: string | null;
+  products: OrderLineItem[];
+  total_amount: number;
+  currency: string;
+  payment_method: OrderPaymentMethod;
+  payment_reference: string | null;
+  escrow_status: OrderEscrowStatus;
+  shipping_status: OrderShippingStatus;
+  shipping_address: Record<string, unknown> | null;
+  tracking_number: string | null;
+  delivery_confirmed_at: string | null;
+  idempotency_key: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderMessageSender = "buyer" | "admin";
+
+export type OrderMessage = {
+  id: string;
+  order_id: string;
+  sender: OrderMessageSender;
+  sender_user_id: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+};
+
+export type DisputeReason = "item_not_as_described" | "item_not_received" | "damaged" | "other";
+export type DisputeStatus = "open" | "under_review" | "resolved_buyer" | "resolved_dealer" | "closed";
+
+export type Dispute = {
+  id: string;
+  order_id: string;
+  opened_by: string;
+  reason: DisputeReason;
+  description: string | null;
+  status: DisputeStatus;
+  mediator_notes: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Customer = {
+  id: string;
+  store_id: string;
+  clerk_user_id: string;
+  shipping_address: Record<string, unknown> | null;
+  billing_address: Record<string, unknown> | null;
+  wishlist: unknown[];
+  marketing_consent: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
