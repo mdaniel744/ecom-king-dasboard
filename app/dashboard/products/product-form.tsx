@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
-import { Plus, X, ArrowLeft, Sparkles } from "lucide-react";
+import { Plus, X, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,7 @@ import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
 import { generateImageAlt } from "./generate-alt-action";
+import { uploadDashboardImage } from "@/app/dashboard/upload-image-action";
 import { slugify } from "@/lib/slug";
 
 type Props = {
@@ -86,6 +87,8 @@ export function ProductForm({
     product?.image_alts?.length ? product.image_alts : [""]
   );
   const [generatingAltIndex, setGeneratingAltIndex] = useState<number | null>(null);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -157,6 +160,61 @@ export function ProductForm({
       toast.error("Alt text generation failed — please try again.");
     } finally {
       setGeneratingAltIndex(null);
+    }
+  }
+
+  async function handleAddImages(fileList: FileList) {
+    const files = Array.from(fileList).slice(0, 20);
+    if (files.length === 0) return;
+
+    setIsBulkUploading(true);
+    try {
+      const existingImages = images.filter((url) => url.trim());
+      const existingAlts = imageAlts.slice(0, existingImages.length);
+      const uploadedUrls: string[] = [];
+
+      for (const file of files) {
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("folder", "products");
+        const result = await uploadDashboardImage(formData);
+        if (result.url) {
+          uploadedUrls.push(result.url);
+        } else {
+          toast.error(result.error ?? `Failed to upload ${file.name}`);
+        }
+      }
+      if (uploadedUrls.length === 0) return;
+
+      setImages([...existingImages, ...uploadedUrls]);
+      setImageAlts([...existingAlts, ...uploadedUrls.map(() => "")]);
+      toast.success(`${uploadedUrls.length} image${uploadedUrls.length > 1 ? "s" : ""} uploaded`);
+
+      // Auto-fill alt text for each new image so bulk uploads don't leave a
+      // pile of manual "Generate" clicks behind — still fully editable after,
+      // and the per-image button below still works to redo any of these.
+      if (name.trim()) {
+        const startIndex = existingImages.length;
+        await Promise.all(
+          uploadedUrls.map(async (_, i) => {
+            const index = startIndex + i;
+            try {
+              const result = await generateImageAlt(name, description || null, brand || null, index);
+              if (result.alt) {
+                setImageAlts((prev) => {
+                  const next = [...prev];
+                  next[index] = result.alt!;
+                  return next;
+                });
+              }
+            } catch {
+              // best-effort — leave blank, manual Generate button covers it
+            }
+          })
+        );
+      }
+    } finally {
+      setIsBulkUploading(false);
     }
   }
 
@@ -403,7 +461,7 @@ export function ProductForm({
                 <CardTitle className="text-base">Images</CardTitle>
                 <FieldInfo
                   title="Product Images & Alt Text"
-                  description="Photos of your product. The first image is the main one sent to Google as the primary image. Click Choose Image to upload a photo straight from your device. Each image has an alt text field — this is the written description Google reads when crawling your site and is one of the strongest image SEO signals. Use Generate to auto-fill it from your product details, or write your own."
+                  description="Photos of your product. The first image is the main one sent to Google as the primary image. Click Add Images to select several photos at once straight from your device — alt text is written in automatically for each one. Alt text is the written description Google reads when crawling your site and is one of the strongest image SEO signals; review what's auto-filled and adjust anything that doesn't match the photo, or use Generate to redo a single one."
                 />
               </div>
               <p className="text-sm text-muted-foreground">
@@ -464,17 +522,32 @@ export function ProductForm({
                   </div>
                 </div>
               ))}
+              <input
+                ref={multiFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleAddImages(e.target.files);
+                  }
+                  e.target.value = "";
+                }}
+              />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setImages([...images, ""]);
-                  setImageAlts([...imageAlts, ""]);
-                }}
+                disabled={isBulkUploading}
+                onClick={() => multiFileInputRef.current?.click()}
               >
-                <Plus className="mr-2 h-3.5 w-3.5" />
-                Add image
+                {isBulkUploading ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                )}
+                {isBulkUploading ? "Uploading..." : "Add Images"}
               </Button>
             </CardContent>
           </Card>
