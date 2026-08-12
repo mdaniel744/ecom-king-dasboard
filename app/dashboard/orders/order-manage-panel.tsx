@@ -5,8 +5,8 @@ import { toast } from "sonner";
 import { Truck, Send, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
 import {
   Select,
   SelectContent,
@@ -19,6 +19,7 @@ import {
   updateOrderTracking,
   sendOrderMessageToBuyer,
 } from "@/app/dashboard/orders/actions";
+import { stripHtml } from "@/lib/html";
 import type { Order } from "@/lib/types";
 
 const ESCROW_STATUS_OPTIONS: { value: Order["escrow_status"]; label: string }[] = [
@@ -61,7 +62,7 @@ export function OrderManagePanel({ order }: { order: Order }) {
   }
 
   function handleSendMessage() {
-    if (!message.trim()) {
+    if (!stripHtml(message).trim()) {
       toast.error("Write a message first.");
       return;
     }
@@ -96,67 +97,66 @@ export function OrderManagePanel({ order }: { order: Order }) {
         <div className="mt-4 space-y-4 border-t border-border pt-4">
           <div className="space-y-1.5">
             <Label>Escrow Status</Label>
-        <Select value={order.escrow_status} onValueChange={handleEscrowChange} disabled={isPending}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ESCROW_STATUS_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            <Select value={order.escrow_status} onValueChange={handleEscrowChange} disabled={isPending}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ESCROW_STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <Truck className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label>Tracking Number</Label>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={trackingNumber}
-            onChange={(e) => setTrackingNumber(e.target.value)}
-            placeholder="Enter tracking number..."
-          />
-          <Button type="button" variant="outline" disabled={isPending} onClick={handleTrackingSave}>
-            Save
-          </Button>
-        </div>
-      </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+              <Label>Tracking Number</Label>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                placeholder="Enter tracking number..."
+              />
+              <Button type="button" variant="outline" disabled={isPending} onClick={handleTrackingSave}>
+                Save
+              </Button>
+            </div>
+          </div>
 
-      {address && (
-        <div className="space-y-1">
-          <Label>Ship To</Label>
-          <p className="text-sm font-medium">{address.fullName}</p>
-          <p className="text-sm text-muted-foreground">
-            {[address.street, address.postalCode, address.city, address.country].filter(Boolean).join(", ")}
-          </p>
-        </div>
-      )}
+          {address && (
+            <div className="space-y-1">
+              <Label>Ship To</Label>
+              <p className="text-sm font-medium">{address.fullName}</p>
+              <p className="text-sm text-muted-foreground">
+                {[address.street, address.postalCode, address.city, address.country].filter(Boolean).join(", ")}
+              </p>
+            </div>
+          )}
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <Send className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label>Message Buyer</Label>
-        </div>
-        <Input
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="Subject (optional)..."
-        />
-        <Textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type a message to the buyer... (will be emailed and appear in their Mails tab)"
-          rows={3}
-        />
-        <Button type="button" disabled={isPending} onClick={handleSendMessage} className="w-full">
-          Send Message to Buyer
-        </Button>
-      </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Send className="h-3.5 w-3.5 text-muted-foreground" />
+              <Label>Message Buyer</Label>
+            </div>
+            <Input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Subject (optional)..."
+            />
+            <RichTextEditor
+              value={message}
+              onChange={setMessage}
+              placeholder="Type a message to the buyer... (will be emailed and appear in their Mails tab)"
+            />
+            <Button type="button" disabled={isPending} onClick={handleSendMessage} className="w-full">
+              Send Message to Buyer
+            </Button>
+          </div>
         </div>
       )}
     </div>

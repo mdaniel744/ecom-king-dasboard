@@ -8,6 +8,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendMail } from "@/lib/mailer";
 import { getKarivUsersByIds } from "@/lib/kariv-clerk";
 import { notifyUser } from "@/lib/notifications";
+import { stripHtml } from "@/lib/html";
+import { makeEmailSafeHtml } from "@/lib/email-html";
 import { validate } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import type { OrderEscrowStatus } from "@/lib/types";
@@ -105,7 +107,15 @@ export async function updateOrderTracking(orderId: string, trackingNumber: strin
 const messageSchema = z.object({
   orderId: z.string().uuid(),
   subject: z.string().trim().max(200).nullable(),
-  message: z.string().trim().min(1, "Message can't be empty").max(5000),
+  // message is rich-text HTML (Tiptap) — a "min length" on raw markup would
+  // pass on an empty-looking "<p></p>", so emptiness is checked on the
+  // stripped plain-text version instead. Max is generous to leave headroom
+  // for markup overhead over the same visible text.
+  message: z
+    .string()
+    .trim()
+    .max(20000, "Message is too long")
+    .refine((val) => stripHtml(val).trim().length > 0, "Message can't be empty"),
 });
 
 /**
@@ -154,7 +164,7 @@ export async function sendOrderMessageToBuyer(
           to: buyerEmail,
           fromName: store.notification_sender_name || store.name,
           subject: fields.subject || `Message about your order — ${store.name}`,
-          html: `<div style="font-family: sans-serif; max-width: 480px;"><p style="white-space: pre-wrap;">${fields.message}</p></div>`,
+          html: `<div style="font-family: sans-serif; max-width: 560px;">${makeEmailSafeHtml(fields.message)}</div>`,
         });
       } catch {
         // best-effort — the in-app message (order_messages row above)
@@ -165,7 +175,7 @@ export async function sendOrderMessageToBuyer(
     await notifyUser(store.id, order.buyer_user_id, {
       type: "order_message",
       title: fields.subject || `New message about your order`,
-      body: fields.message.slice(0, 150),
+      body: stripHtml(fields.message).slice(0, 150),
       linkPath: `/portal/orders/${order.id}`,
     });
 
