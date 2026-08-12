@@ -7,6 +7,7 @@ import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendMail } from "@/lib/mailer";
 import { getKarivUsersByIds } from "@/lib/kariv-clerk";
+import { notifyUser } from "@/lib/notifications";
 import { validate } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import type { OrderEscrowStatus } from "@/lib/types";
@@ -21,6 +22,21 @@ const ESCROW_STATUSES: OrderEscrowStatus[] = [
   "cancelled",
 ];
 
+// Buyer-facing copy per status — matches the language already shown on the
+// storefront's own order-tracker steps, not our internal staff labels.
+const STATUS_NOTIFICATION_COPY: Record<OrderEscrowStatus, { title: string; body: string }> = {
+  pending_review: { title: "Order received", body: "We're verifying availability with the dealer." },
+  dealer_accepted: {
+    title: "Dealer confirmed your order",
+    body: "Please proceed with payment to secure your order.",
+  },
+  funds_secured: { title: "Payment secured", body: "Your payment is safely held in escrow." },
+  shipped: { title: "Your watch has shipped", body: "Tracking details are available on your order." },
+  verified: { title: "Delivery confirmed", body: "Thanks for confirming receipt of your watch." },
+  funds_released: { title: "Order complete", body: "Funds have been released to the dealer." },
+  cancelled: { title: "Order cancelled", body: "This order has been cancelled." },
+};
+
 const escrowStatusSchema = z.object({
   orderId: z.string().uuid(),
   escrowStatus: z.enum(ESCROW_STATUSES as [OrderEscrowStatus, ...OrderEscrowStatus[]]),
@@ -31,13 +47,25 @@ export async function updateOrderEscrowStatus(orderId: string, escrowStatus: str
     const store = await getCurrentStore();
     const fields = validate(escrowStatusSchema, { orderId, escrowStatus });
 
-    const { error } = await supabaseAdmin
+    const { data: order, error } = await supabaseAdmin
       .from("orders")
       .update({ escrow_status: fields.escrowStatus, updated_at: new Date().toISOString() })
       .eq("id", fields.orderId)
-      .eq("store_id", store.id);
+      .eq("store_id", store.id)
+      .select("id, buyer_user_id")
+      .single();
 
     if (error) throw error;
+
+    if (order) {
+      const copy = STATUS_NOTIFICATION_COPY[fields.escrowStatus];
+      await notifyUser(store.id, order.buyer_user_id, {
+        type: "escrow_status_changed",
+        title: copy.title,
+        body: copy.body,
+        linkPath: `/portal/orders/${order.id}`,
+      });
+    }
 
     revalidatePath("/dashboard/orders");
     return ok();
@@ -133,6 +161,13 @@ export async function sendOrderMessageToBuyer(
         // already succeeded, so don't fail the whole action over email
       }
     }
+
+    await notifyUser(store.id, order.buyer_user_id, {
+      type: "order_message",
+      title: fields.subject || `New message about your order`,
+      body: fields.message.slice(0, 150),
+      linkPath: `/portal/orders/${order.id}`,
+    });
 
     revalidatePath("/dashboard/orders");
     return ok();

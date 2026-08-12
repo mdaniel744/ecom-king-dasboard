@@ -362,3 +362,29 @@ export type Customer = {
   created_at: string;
   updated_at: string;
 };
+
+/** Written by the storefront when a buyer/dealer grants browser notification
+ * permission — read by this dashboard's push-sending code (lib/push.ts). */
+export type PushSubscriptionRow = {
+  id: string;
+  store_id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+};
+
+/** Persistent notification history — feeds the storefront's notification
+ * bell, readable even if the live push itself never arrived. */
+export type Notification = {
+  id: string;
+  store_id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  link_path: string | null;
+  read_at: string | null;
+  created_at: string;
+};
