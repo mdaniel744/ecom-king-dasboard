@@ -295,6 +295,8 @@ export type OrderLineItem = {
   currency: string;
   image: string | null;
   quantity: number;
+  condition?: string;
+  brand?: string;
 };
 
 export type Order = {

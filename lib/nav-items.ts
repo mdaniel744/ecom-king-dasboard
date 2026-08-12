@@ -13,6 +13,7 @@ import {
   Scale,
   UserCheck,
   Type,
+  PackageSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ export const navItems: NavItem[] = [
   { label: "Glossary", href: "/dashboard/glossary", icon: Languages },
   { label: "Legal Pages", href: "/dashboard/legal-pages", icon: Scale },
   { label: "Dealer Applications", href: "/dashboard/dealer-applications", icon: UserCheck },
+  { label: "Orders & Escrow", href: "/dashboard/orders", icon: PackageSearch },
   { label: "Strings", href: "/dashboard/website-strings", icon: Type },
   { label: "Inquiries", href: "/dashboard/inquiries", icon: Inbox },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
