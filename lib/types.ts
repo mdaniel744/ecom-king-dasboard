@@ -36,6 +36,10 @@ export type Store = {
   google_push_locales: string[];
   /** Where new-inquiry notification emails are sent. Null until the store owner sets it in Settings. */
   notification_email: string | null;
+  /** Branded "From" display name for outbound emails (e.g. "Kariv Glamour").
+   * Falls back to `name` when unset — every store gets a branded sender,
+   * not the generic platform name, without needing to fill this in. */
+  notification_sender_name: string | null;
   created_at: string;
   updated_at: string;
 };

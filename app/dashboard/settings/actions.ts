@@ -28,6 +28,7 @@ const settingsSchema = z.object({
     (v) => (typeof v === "string" && v.trim() === "" ? null : v),
     z.string().trim().max(255).email().nullable()
   ),
+  notificationSenderName: z.string().trim().max(100).nullable(),
 });
 
 export async function updateStoreSettings(formData: FormData): Promise<ActionResult> {
@@ -59,6 +60,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       enabledLocalesRaw.includes(l)
     );
     const notificationEmailRaw = (formData.get("notification_email") as string)?.trim() ?? "";
+    const notificationSenderNameRaw = (formData.get("notification_sender_name") as string)?.trim() || null;
 
     const {
       name,
@@ -73,6 +75,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       enabledLocales,
       googlePushLocales,
       notificationEmail,
+      notificationSenderName,
     } = validate(settingsSchema, {
       name: nameRaw,
       domain: domainCleaned,
@@ -86,6 +89,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       enabledLocales: enabledLocalesRaw,
       googlePushLocales: googlePushLocalesRaw,
       notificationEmail: notificationEmailRaw,
+      notificationSenderName: notificationSenderNameRaw,
     });
     const { error } = await supabaseAdmin
       .from("stores")
@@ -102,6 +106,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         enabled_locales: enabledLocales,
         google_push_locales: googlePushLocales,
         notification_email: notificationEmail,
+        notification_sender_name: notificationSenderName,
       })
       .eq("id", store.id);
 

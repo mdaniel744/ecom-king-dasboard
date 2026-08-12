@@ -228,27 +228,47 @@ export function SettingsForm({ store }: { store: Store }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Inquiry Notifications</CardTitle>
+          <CardTitle className="text-base">Email Notifications</CardTitle>
           <p className="text-sm text-muted-foreground">
             When a customer submits an inquiry on your storefront, we&apos;ll email it here
             automatically.
           </p>
         </CardHeader>
-        <CardContent className="space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="notification_email">Notification Email</Label>
-            <FieldInfo
-              title="Notification Email"
-              description="The email address that receives a message every time a customer submits an inquiry through your storefront. Leave blank to turn off email notifications — inquiries will still appear in the Inquiries page either way."
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="notification_email">Notification Email</Label>
+              <FieldInfo
+                title="Notification Email"
+                description="The email address that receives a message every time a customer submits an inquiry through your storefront. Leave blank to turn off email notifications — inquiries will still appear in the Inquiries page either way."
+              />
+            </div>
+            <Input
+              id="notification_email"
+              name="notification_email"
+              type="email"
+              placeholder="e.g. you@yourbusiness.com"
+              defaultValue={store.notification_email ?? ""}
             />
           </div>
-          <Input
-            id="notification_email"
-            name="notification_email"
-            type="email"
-            placeholder="e.g. you@yourbusiness.com"
-            defaultValue={store.notification_email ?? ""}
-          />
+
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="notification_sender_name">Email Sender Name</Label>
+              <FieldInfo
+                title="Email Sender Name"
+                description={
+                  'The name customers and staff see as the sender on emails from your store (e.g. "Kariv Glamour" instead of a generic platform name). Leave blank to just use your Store Name above — only fill this in if you want something different, like a shorter or more customer-facing version.'
+                }
+              />
+            </div>
+            <Input
+              id="notification_sender_name"
+              name="notification_sender_name"
+              placeholder={store.name || "e.g. Kariv Glamour"}
+              defaultValue={store.notification_sender_name ?? ""}
+            />
+          </div>
         </CardContent>
       </Card>
 

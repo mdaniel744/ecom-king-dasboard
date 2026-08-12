@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const { data: store } = await supabaseAdmin
     .from("stores")
-    .select("name, notification_email")
+    .select("name, notification_email, notification_sender_name")
     .eq("id", inquiry.store_id)
     .single();
   if (!store?.notification_email) return NextResponse.json({ ok: true });
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
   try {
     await sendMail({
       to: store.notification_email,
+      fromName: store.notification_sender_name || store.name,
       subject: `New inquiry${productName ? ` — ${productName}` : ""} — ${store.name}`,
       html: `
         <div style="font-family: sans-serif; max-width: 480px;">
