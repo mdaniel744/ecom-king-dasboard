@@ -72,6 +72,18 @@ export const NEXT_ACTION: Partial<Record<OrderEscrowStatus, { label: string; nex
   verified: { label: "Confirm Complete", next: "funds_released" },
 };
 
-// Cancel is only offered while an order is still "in flight" — not once
-// funds have already been released or it's already cancelled.
-export const CANCELLABLE_STATUSES: OrderEscrowStatus[] = ["pending_review", "dealer_accepted", "funds_secured"];
+// Cancel is offered while an order is still "in flight" or under dispute —
+// not once funds have already been released or it's already cancelled.
+// Notably NOT offered from "shipped" (no cancel path once a courier has the
+// item), but IS offered from "verified" — confirmed against the storefront's
+// own transitionEscrow() adjacency list: verified → cancelled is the real
+// refund branch of dispute resolution (a dispute can only be opened once
+// delivery is verified, and resolving it for the buyer cancels + refunds
+// from there). Don't drop "verified" from this list without reconfirming
+// that dispute-refund path still needs it.
+export const CANCELLABLE_STATUSES: OrderEscrowStatus[] = [
+  "pending_review",
+  "dealer_accepted",
+  "funds_secured",
+  "verified",
+];

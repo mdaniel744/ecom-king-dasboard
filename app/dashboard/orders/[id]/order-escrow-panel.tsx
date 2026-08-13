@@ -142,13 +142,36 @@ export function OrderEscrowPanel({ order }: { order: Order }) {
             <span className="text-muted-foreground">Method</span>
             <span className="font-medium capitalize">{order.payment_method.replace("_", " ")}</span>
           </div>
-          <div className="mt-1 flex justify-between text-sm">
-            <span className="text-muted-foreground">Reference</span>
-            <span className="font-medium">{order.payment_reference || "—"}</span>
-          </div>
-          {/* Receipt/proof-of-payment upload: intentionally not built yet —
-              pending decision on who uploads it (buyer/dealer/staff) and
-              at which escrow stage it's required. */}
+          {/* payment_reference is a real uploaded-receipt file URL, written
+              by the buyer's own confirmPaymentSent() on the storefront while
+              escrow_status is dealer_accepted — confirmed with the Kariv
+              storefront agent. Not a plain text reference string. */}
+          {order.payment_reference ? (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-muted-foreground">Payment Receipt</p>
+              {/^https?:\/\/.*\.(jpe?g|png|webp|gif)(\?.*)?$/i.test(order.payment_reference) ? (
+                <a href={order.payment_reference} target="_blank" rel="noreferrer" className="block w-fit">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={order.payment_reference}
+                    alt="Payment receipt"
+                    className="h-24 w-24 rounded-md border border-border object-cover hover:opacity-80"
+                  />
+                </a>
+              ) : (
+                <a
+                  href={order.payment_reference}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  View Receipt ↗
+                </a>
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">No receipt uploaded yet.</p>
+          )}
         </div>
       </div>
 
