@@ -1,33 +1,10 @@
+import Link from "next/link";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getKarivUsersByIds } from "@/lib/kariv-clerk";
 import { Badge } from "@/components/ui/badge";
-import { OrderManagePanel } from "@/app/dashboard/orders/order-manage-panel";
-import type { Order, OrderEscrowStatus } from "@/lib/types";
-
-const STATUS_LABEL: Record<OrderEscrowStatus, string> = {
-  pending_review: "Pending Dealer Review",
-  dealer_accepted: "Dealer Accepted",
-  funds_secured: "Funds Secured",
-  shipped: "Shipped",
-  verified: "Delivery Confirmed",
-  funds_released: "Funds Released to Dealer",
-  cancelled: "Order Cancelled",
-};
-
-const STATUS_CLASS: Record<OrderEscrowStatus, string> = {
-  pending_review: "border-transparent bg-amber-100 text-amber-900",
-  dealer_accepted: "border-transparent bg-blue-100 text-blue-900",
-  funds_secured: "border-transparent bg-emerald-100 text-emerald-900",
-  shipped: "border-transparent bg-indigo-100 text-indigo-900",
-  verified: "border-transparent bg-teal-100 text-teal-900",
-  funds_released: "border-transparent bg-green-200 text-green-950",
-  cancelled: "border-transparent bg-red-100 text-red-900",
-};
-
-function orderRef(id: string) {
-  return `KRV-${id.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
-}
+import { STATUS_LABEL, STATUS_CLASS, orderRef } from "@/lib/order-display";
+import type { Order } from "@/lib/types";
 
 export default async function OrdersPage() {
   const store = await getCurrentStore();
@@ -58,7 +35,11 @@ export default async function OrdersPage() {
           const buyer = buyers.get(order.buyer_user_id);
           const item = order.products?.[0];
           return (
-            <div key={order.id} className="rounded-lg border border-border bg-card p-4">
+            <Link
+              key={order.id}
+              href={`/dashboard/orders/${order.id}`}
+              className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40"
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
                   {item?.image ? (
@@ -68,7 +49,7 @@ export default async function OrdersPage() {
                     <div className="h-14 w-14 shrink-0 rounded-md border border-border bg-muted" />
                   )}
                   <div>
-                    <p className="font-medium">{buyer?.name ?? order.buyer_user_id}</p>
+                    <p className="font-medium text-primary hover:underline">{buyer?.name ?? order.buyer_user_id}</p>
                     <p className="text-sm text-muted-foreground">{buyer?.email ?? "—"}</p>
                     <p className="font-mono text-xs text-muted-foreground">{orderRef(order.id)}</p>
                     {item && (
@@ -87,9 +68,7 @@ export default async function OrdersPage() {
                   </Badge>
                 </div>
               </div>
-
-              <OrderManagePanel order={order} />
-            </div>
+            </Link>
           );
         })}
       </div>
