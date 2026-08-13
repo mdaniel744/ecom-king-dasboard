@@ -320,12 +320,18 @@ export type Order = {
 };
 
 export type OrderMessageSender = "buyer" | "admin" | "system" | "dealer";
+/** Which conversation this row belongs to — separate from `sender` (who
+ * wrote it). An admin reply to the buyer and an admin reply to the dealer
+ * both have sender: "admin", but different recipient_role, so each party's
+ * inbox only ever shows their own thread. */
+export type OrderMessageRecipient = "buyer" | "dealer";
 
 export type OrderMessage = {
   id: string;
   order_id: string;
   sender: OrderMessageSender;
   sender_user_id: string;
+  recipient_role: OrderMessageRecipient;
   subject: string | null;
   kind: string;
   message: string;

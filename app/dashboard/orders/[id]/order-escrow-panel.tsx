@@ -2,18 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Truck, Send } from "lucide-react";
+import { Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
-import { OrderMessageThread } from "./order-message-thread";
+import { OrderMessageCard } from "./order-message-card";
 import {
   updateOrderEscrowStatus,
   updateOrderTracking,
   sendOrderMessageToBuyer,
+  sendOrderMessageToDealer,
 } from "@/app/dashboard/orders/actions";
-import { stripHtml } from "@/lib/html";
 import { NEXT_ACTION, CANCELLABLE_STATUSES, STATUS_LABEL } from "@/lib/order-display";
 import type { Order, OrderMessage } from "@/lib/types";
 
@@ -28,8 +27,6 @@ export function OrderEscrowPanel({
 }) {
   const [isPending, startTransition] = useTransition();
   const [trackingNumber, setTrackingNumber] = useState(order.tracking_number ?? "");
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
 
   function handleAdvance(nextStatus: string) {
     startTransition(async () => {
@@ -65,28 +62,14 @@ export function OrderEscrowPanel({
     });
   }
 
-  function handleSendMessage() {
-    if (!stripHtml(message).trim()) {
-      toast.error("Write a message first.");
-      return;
-    }
-    startTransition(async () => {
-      const result = await sendOrderMessageToBuyer(order.id, subject, message);
-      if (result.success) {
-        toast.success("Message sent to buyer");
-        setSubject("");
-        setMessage("");
-      } else {
-        toast.error(result.error);
-      }
-    });
-  }
-
   const nextAction = NEXT_ACTION[order.escrow_status];
   const canCancel = CANCELLABLE_STATUSES.includes(order.escrow_status);
   const address = order.shipping_address as
     | { fullName?: string; street?: string; city?: string; postalCode?: string; country?: string }
     | null;
+
+  const buyerMessages = messages.filter((m) => m.recipient_role === "buyer");
+  const dealerMessages = messages.filter((m) => m.recipient_role === "dealer");
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -184,31 +167,27 @@ export function OrderEscrowPanel({
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-center gap-1.5">
-          <Send className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label>Messages</Label>
-        </div>
+      <div className="space-y-4">
+        <OrderMessageCard
+          title="Message Buyer"
+          placeholder="Type a message to the buyer... (will be emailed and appear in their Mails tab)"
+          messages={buyerMessages}
+          senderNames={senderNames}
+          sendAction={(subject, message) => sendOrderMessageToBuyer(order.id, subject, message)}
+        />
 
-        <div className="mt-3">
-          <OrderMessageThread messages={messages} senderNames={senderNames} />
-        </div>
-
-        <div className="mt-4 space-y-2 border-t border-border pt-4">
-          <Input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="Subject (optional)..."
+        {/* Only shown when this order actually has a dealer assigned —
+            most orders don't (dealer_user_id is null unless the product
+            came from a dealer's own listing). */}
+        {order.dealer_user_id && (
+          <OrderMessageCard
+            title="Message Dealer"
+            placeholder="Type a message to the dealer... (will be emailed and appear in their Sales Messages tab)"
+            messages={dealerMessages}
+            senderNames={senderNames}
+            sendAction={(subject, message) => sendOrderMessageToDealer(order.id, subject, message)}
           />
-          <RichTextEditor
-            value={message}
-            onChange={setMessage}
-            placeholder="Type a message to the buyer... (will be emailed and appear in their Mails tab)"
-          />
-          <Button type="button" disabled={isPending} onClick={handleSendMessage} className="w-full">
-            Send Message to Buyer
-          </Button>
-        </div>
+        )}
       </div>
     </div>
   );

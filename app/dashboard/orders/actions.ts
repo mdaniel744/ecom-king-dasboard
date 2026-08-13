@@ -118,15 +118,24 @@ const messageSchema = z.object({
     .refine((val) => stripHtml(val).trim().length > 0, "Message can't be empty"),
 });
 
+const RECIPIENT_INBOX_PATH = {
+  buyer: "/portal/mails",
+  dealer: "/portal/sales-messages",
+} as const;
+
 /**
- * Records a staff → buyer message (shows in the storefront's Mails tab via
- * order_messages) and, best-effort, emails the buyer the same content —
- * branded with this store's own sender name, not the generic platform one.
+ * Shared implementation for staff → buyer and staff → dealer messages.
+ * recipient_role is what keeps the two conversations from bleeding into
+ * each other — same `sender: "admin"` either way, different recipient_role,
+ * so each party's inbox only ever shows their own thread. Records the
+ * message (order_messages), emails the recipient (branded per-store), and
+ * pushes a notification linking to their own inbox route.
  */
-export async function sendOrderMessageToBuyer(
+async function sendOrderMessage(
   orderId: string,
   subject: string,
-  message: string
+  message: string,
+  recipientRole: "buyer" | "dealer"
 ): Promise<ActionResult> {
   try {
     const store = await getCurrentStore();
@@ -139,7 +148,7 @@ export async function sendOrderMessageToBuyer(
 
     const { data: order, error: fetchError } = await supabaseAdmin
       .from("orders")
-      .select("id, buyer_user_id")
+      .select("id, buyer_user_id, dealer_user_id")
       .eq("id", fields.orderId)
       .eq("store_id", store.id)
       .single();
@@ -147,21 +156,27 @@ export async function sendOrderMessageToBuyer(
       return { success: false, error: "Order not found.", fieldErrors: {} };
     }
 
+    const recipientUserId = recipientRole === "buyer" ? order.buyer_user_id : order.dealer_user_id;
+    if (!recipientUserId) {
+      return { success: false, error: "This order has no dealer assigned.", fieldErrors: {} };
+    }
+
     const { error } = await supabaseAdmin.from("order_messages").insert({
       order_id: order.id,
       sender: "admin",
       sender_user_id: userId,
+      recipient_role: recipientRole,
       subject: fields.subject,
       message: fields.message,
     });
     if (error) throw error;
 
-    const buyers = await getKarivUsersByIds([order.buyer_user_id]);
-    const buyerEmail = buyers.get(order.buyer_user_id)?.email;
-    if (buyerEmail) {
+    const recipients = await getKarivUsersByIds([recipientUserId]);
+    const recipientEmail = recipients.get(recipientUserId)?.email;
+    if (recipientEmail) {
       try {
         await sendMail({
-          to: buyerEmail,
+          to: recipientEmail,
           fromName: store.notification_sender_name || store.name,
           subject: fields.subject || `Message about your order — ${store.name}`,
           html: `<div style="font-family: sans-serif; max-width: 560px;">${makeEmailSafeHtml(fields.message)}</div>`,
@@ -172,15 +187,11 @@ export async function sendOrderMessageToBuyer(
       }
     }
 
-    await notifyUser(store.id, order.buyer_user_id, {
+    await notifyUser(store.id, recipientUserId, {
       type: "order_message",
       title: fields.subject || `New message about your order`,
       body: stripHtml(fields.message).slice(0, 150),
-      // Message notifications open the Mails inbox directly, not the order
-      // page — clicking "new message" should land you on the message, not
-      // require a second click to find it. Confirmed with the storefront
-      // agent that /portal/mails is their real route.
-      linkPath: "/portal/mails",
+      linkPath: RECIPIENT_INBOX_PATH[recipientRole],
     });
 
     revalidatePath("/dashboard/orders");
@@ -188,4 +199,27 @@ export async function sendOrderMessageToBuyer(
   } catch (err) {
     return toActionResult(err);
   }
+}
+
+/**
+ * Staff → buyer message (shows in the storefront's Mails tab).
+ */
+export async function sendOrderMessageToBuyer(
+  orderId: string,
+  subject: string,
+  message: string
+): Promise<ActionResult> {
+  return sendOrderMessage(orderId, subject, message, "buyer");
+}
+
+/**
+ * Staff → dealer message (shows in the storefront's Sales Messages tab).
+ * Only meaningful on orders that actually have a dealer assigned.
+ */
+export async function sendOrderMessageToDealer(
+  orderId: string,
+  subject: string,
+  message: string
+): Promise<ActionResult> {
+  return sendOrderMessage(orderId, subject, message, "dealer");
 }

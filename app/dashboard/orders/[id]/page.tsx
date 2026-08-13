@@ -42,6 +42,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   // name — admin/system messages don't need this (labeled by role instead).
   const clerkIdsToResolve = [
     typedOrder.buyer_user_id,
+    ...(typedOrder.dealer_user_id ? [typedOrder.dealer_user_id] : []),
     ...typedMessages.filter((m) => m.sender === "buyer" || m.sender === "dealer").map((m) => m.sender_user_id),
   ];
   const buyers = await getKarivUsersByIds(clerkIdsToResolve);
