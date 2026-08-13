@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { OrderTracker } from "./order-tracker";
 import { OrderEscrowPanel } from "./order-escrow-panel";
 import { STATUS_LABEL, STATUS_CLASS, STATUS_BANNER, orderRef, escrowStepIndex } from "@/lib/order-display";
-import type { Order } from "@/lib/types";
+import type { Order, OrderMessage } from "@/lib/types";
 import { validateId } from "@/lib/validation";
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +31,20 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   if (!order) notFound();
   const typedOrder = order as Order;
 
-  const buyers = await getKarivUsersByIds([typedOrder.buyer_user_id]);
+  const { data: messages } = await supabaseAdmin
+    .from("order_messages")
+    .select("*")
+    .eq("order_id", typedOrder.id)
+    .order("created_at", { ascending: true });
+  const typedMessages = (messages ?? []) as OrderMessage[];
+
+  // Buyer and dealer messages carry a Clerk user id we can resolve to a
+  // name — admin/system messages don't need this (labeled by role instead).
+  const clerkIdsToResolve = [
+    typedOrder.buyer_user_id,
+    ...typedMessages.filter((m) => m.sender === "buyer" || m.sender === "dealer").map((m) => m.sender_user_id),
+  ];
+  const buyers = await getKarivUsersByIds(clerkIdsToResolve);
   const buyer = buyers.get(typedOrder.buyer_user_id);
   const stepIndex = escrowStepIndex(typedOrder.escrow_status);
   const item = typedOrder.products?.[0];
@@ -114,7 +127,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       </div>
 
       <div className="mt-4">
-        <OrderEscrowPanel order={typedOrder} />
+        <OrderEscrowPanel
+          order={typedOrder}
+          messages={typedMessages}
+          senderNames={Object.fromEntries(buyers.entries())}
+        />
       </div>
     </div>
   );

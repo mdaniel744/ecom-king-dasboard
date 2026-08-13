@@ -319,7 +319,7 @@ export type Order = {
   updated_at: string;
 };
 
-export type OrderMessageSender = "buyer" | "admin" | "system";
+export type OrderMessageSender = "buyer" | "admin" | "system" | "dealer";
 
 export type OrderMessage = {
   id: string;

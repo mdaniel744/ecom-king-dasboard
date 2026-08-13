@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
+import { OrderMessageThread } from "./order-message-thread";
 import {
   updateOrderEscrowStatus,
   updateOrderTracking,
@@ -14,9 +15,17 @@ import {
 } from "@/app/dashboard/orders/actions";
 import { stripHtml } from "@/lib/html";
 import { NEXT_ACTION, CANCELLABLE_STATUSES, STATUS_LABEL } from "@/lib/order-display";
-import type { Order } from "@/lib/types";
+import type { Order, OrderMessage } from "@/lib/types";
 
-export function OrderEscrowPanel({ order }: { order: Order }) {
+export function OrderEscrowPanel({
+  order,
+  messages,
+  senderNames,
+}: {
+  order: Order;
+  messages: OrderMessage[];
+  senderNames: Record<string, { name: string; email: string | null }>;
+}) {
   const [isPending, startTransition] = useTransition();
   const [trackingNumber, setTrackingNumber] = useState(order.tracking_number ?? "");
   const [subject, setSubject] = useState("");
@@ -178,9 +187,14 @@ export function OrderEscrowPanel({ order }: { order: Order }) {
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex items-center gap-1.5">
           <Send className="h-3.5 w-3.5 text-muted-foreground" />
-          <Label>Message Buyer</Label>
+          <Label>Messages</Label>
         </div>
-        <div className="mt-2 space-y-2">
+
+        <div className="mt-3">
+          <OrderMessageThread messages={messages} senderNames={senderNames} />
+        </div>
+
+        <div className="mt-4 space-y-2 border-t border-border pt-4">
           <Input
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
@@ -195,9 +209,6 @@ export function OrderEscrowPanel({ order }: { order: Order }) {
             Send Message to Buyer
           </Button>
         </div>
-        {/* Message thread (buyer/dealer replies) intentionally not built
-            yet — pending confirmation of how dealer-authored messages
-            reach order_messages from the storefront's dealer portal. */}
       </div>
     </div>
   );
