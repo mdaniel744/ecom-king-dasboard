@@ -1,5 +1,11 @@
+"use client";
+
+import { useTransition } from "react";
+import { toast } from "sonner";
+import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize-html";
+import { deleteOrderMessage } from "@/app/dashboard/orders/actions";
 import type { OrderMessage, OrderMessageSender } from "@/lib/types";
 
 const SENDER_LABEL: Record<OrderMessageSender, string> = {
@@ -23,6 +29,20 @@ export function OrderMessageThread({
   messages: OrderMessage[];
   senderNames: Record<string, { name: string; email: string | null }>;
 }) {
+  const [isPending, startTransition] = useTransition();
+
+  function handleDelete(messageId: string) {
+    if (!confirm("Delete this message? This can't be undone.")) return;
+    startTransition(async () => {
+      const result = await deleteOrderMessage(messageId);
+      if (result.success) {
+        toast.success("Message deleted");
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
   if (messages.length === 0) {
     return <p className="text-sm text-muted-foreground">No messages yet on this order.</p>;
   }
@@ -33,7 +53,7 @@ export function OrderMessageThread({
         const senderName =
           m.sender === "buyer" || m.sender === "dealer" ? senderNames[m.sender_user_id]?.name : null;
         return (
-          <div key={m.id} className="rounded-md border border-border p-3">
+          <div key={m.id} className="group rounded-md border border-border p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", SENDER_CLASS[m.sender])}>
@@ -41,7 +61,19 @@ export function OrderMessageThread({
                 </span>
                 {senderName && <span className="text-xs text-muted-foreground">{senderName}</span>}
               </div>
-              <span className="text-xs text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleDelete(m.id)}
+                  className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-40"
+                  aria-label="Delete message"
+                  title="Delete message"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
             {m.subject && <p className="mt-1.5 text-sm font-medium">{m.subject}</p>}
             {/* Sanitized for every sender, not just trusted admin content —

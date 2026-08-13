@@ -10,7 +10,7 @@ import { getKarivUsersByIds } from "@/lib/kariv-clerk";
 import { notifyUser } from "@/lib/notifications";
 import { stripHtml } from "@/lib/html";
 import { makeEmailSafeHtml } from "@/lib/email-html";
-import { validate } from "@/lib/validation";
+import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import type { OrderEscrowStatus } from "@/lib/types";
 
@@ -222,4 +222,44 @@ export async function sendOrderMessageToDealer(
   message: string
 ): Promise<ActionResult> {
   return sendOrderMessage(orderId, subject, message, "dealer");
+}
+
+/**
+ * Deletes a single message from an order's thread (buyer or dealer side).
+ * order_messages has no store_id of its own, so ownership is verified
+ * through its parent order before deleting — same pattern as every other
+ * cross-table ownership check on this platform.
+ */
+export async function deleteOrderMessage(messageId: string): Promise<ActionResult> {
+  try {
+    messageId = validateId(messageId);
+    const store = await getCurrentStore();
+
+    const { data: message } = await supabaseAdmin
+      .from("order_messages")
+      .select("id, order_id")
+      .eq("id", messageId)
+      .single();
+    if (!message) {
+      return { success: false, error: "Message not found.", fieldErrors: {} };
+    }
+
+    const { data: order } = await supabaseAdmin
+      .from("orders")
+      .select("id")
+      .eq("id", message.order_id)
+      .eq("store_id", store.id)
+      .single();
+    if (!order) {
+      return { success: false, error: "Message not found.", fieldErrors: {} };
+    }
+
+    const { error } = await supabaseAdmin.from("order_messages").delete().eq("id", messageId);
+    if (error) throw error;
+
+    revalidatePath("/dashboard/orders");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
 }
