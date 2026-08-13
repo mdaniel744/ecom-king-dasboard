@@ -176,7 +176,11 @@ export async function sendOrderMessageToBuyer(
       type: "order_message",
       title: fields.subject || `New message about your order`,
       body: stripHtml(fields.message).slice(0, 150),
-      linkPath: `/portal/orders/${order.id}`,
+      // Message notifications open the Mails inbox directly, not the order
+      // page — clicking "new message" should land you on the message, not
+      // require a second click to find it. Confirmed with the storefront
+      // agent that /portal/mails is their real route.
+      linkPath: "/portal/mails",
     });
 
     revalidatePath("/dashboard/orders");

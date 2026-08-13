@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 import type { OrderMessage, OrderMessageSender } from "@/lib/types";
 
 const SENDER_LABEL: Record<OrderMessageSender, string> = {
@@ -43,16 +44,14 @@ export function OrderMessageThread({
               <span className="text-xs text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
             </div>
             {m.subject && <p className="mt-1.5 text-sm font-medium">{m.subject}</p>}
-            {m.sender === "admin" ? (
-              // Trusted — our own RichTextEditor output, never external input.
-              <div className="prose prose-sm mt-1 max-w-none" dangerouslySetInnerHTML={{ __html: m.message }} />
-            ) : (
-              // Buyer/dealer/system content — rendered as plain text (not
-              // dangerouslySetInnerHTML) until it's confirmed whether the
-              // storefront ever sends rich HTML here. Safe by default either
-              // way; worst case a literal tag shows instead of formatting.
-              <p className="mt-1 whitespace-pre-wrap text-sm">{m.message}</p>
-            )}
+            {/* Sanitized for every sender, not just trusted admin content —
+                buyer/dealer messages can be rich HTML from the storefront's
+                own composer too, and that's external input regardless of
+                how much we trust the storefront's own code. */}
+            <div
+              className="prose prose-sm mt-1 max-w-none"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(m.message) }}
+            />
           </div>
         );
       })}

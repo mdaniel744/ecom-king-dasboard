@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -104,6 +104,21 @@ export function RichTextEditor({ value, onChange, placeholder }: Props) {
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
+
+  // Tiptap's `content` option only seeds the initial document — it does not
+  // stay in sync with the `value` prop on later renders. Without this, a
+  // parent clearing its state after submit (e.g. after sending a message)
+  // has no effect: the editor keeps showing what was just "sent," looking
+  // like the send silently failed. Guarded against the value the editor
+  // already holds so normal typing (which flows value → onChange → back
+  // here) never fights the user's own cursor.
+  useEffect(() => {
+    if (!editor) return;
+    if (value !== editor.getHTML()) {
+      editor.commands.setContent(value, { emitUpdate: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, editor]);
 
   if (!editor) return null;
 
