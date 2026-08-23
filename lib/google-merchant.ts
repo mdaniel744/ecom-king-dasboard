@@ -107,7 +107,7 @@ function getMarketsAndLocales(store: Store): { markets: string[]; locales: strin
   return { markets, locales };
 }
 
-export type TranslatedFields = { name: string; description: string; short_description: string | null };
+export type TranslatedFields = { name: string; description: string; short_description: string | null; slug: string };
 
 /**
  * Fetches every translation row for this product once, then returns a
@@ -139,6 +139,7 @@ export async function getTranslationsByLocale(
     // (e.g. google_description overrides), so this is safe either way.
     description: stripHtml(product.google_description || product.description || product.name),
     short_description: product.short_description,
+    slug: product.slug,
   };
 
   const map = new Map<string, TranslatedFields>();
@@ -157,6 +158,7 @@ export async function getTranslationsByLocale(
     if (row.field_name === titleFieldName) entry.name = row.value;
     if (row.field_name === descriptionFieldName) entry.description = stripHtml(row.value);
     if (row.field_name === "short_description") entry.short_description = row.value;
+    if (row.field_name === "slug") entry.slug = row.value;
   }
 
   return map;
@@ -173,17 +175,25 @@ export async function getTranslationsByLocale(
  * "containers", "produkt") also varies per store, from
  * stores.product_url_path.
  *
+ * localizedSlug is optional and defaults to the product's own (source-
+ * language) slug — pass a locale's translated slug (from
+ * getTranslationsByLocale) when building a non-source-locale link. Some
+ * real storefronts (STF, confirmed live) translate the slug itself per
+ * language, not just the surrounding word — without this, every non-source
+ * link would point at a URL that only works via a redirect, not the real
+ * canonical page, which Google Merchant penalizes.
+ *
  * Exported — the XML feed route builds links the exact same way, so a
  * product's link is identical whether it reached Google via API push or
  * via the XML feed.
  */
-export function buildProductLink(store: Store, product: Product, locale: string): string {
+export function buildProductLink(store: Store, product: Product, locale: string, localizedSlug?: string): string {
   const base = store.domain!.startsWith("http") ? store.domain! : `https://${store.domain}`;
   const trimmedBase = base.replace(/\/$/, "");
   const isSource = locale === store.google_content_language;
   const localePrefix = isSource && !store.source_locale_has_prefix ? "" : `/${locale}`;
   const path = store.product_url_path.replace(/^\/|\/$/g, "");
-  return `${trimmedBase}${localePrefix}/${path}/${product.slug}`;
+  return `${trimmedBase}${localePrefix}/${path}/${localizedSlug || product.slug}`;
 }
 
 export type LinkCheckResult = {
@@ -224,11 +234,13 @@ async function fetchLinkStatus(url: string): Promise<Omit<LinkCheckResult, "mark
 export async function checkProductLinks(store: Store, product: Product): Promise<LinkCheckResult[]> {
   const markets = store.google_feed_labels?.length ? store.google_feed_labels : [store.google_feed_label];
   const locales = Array.from(new Set([store.google_content_language, ...(store.enabled_locales ?? [])]));
+  const textByLocale = await getTranslationsByLocale(store, product);
 
   const results: LinkCheckResult[] = [];
   for (const market of markets) {
     for (const locale of locales) {
-      const url = buildProductLink(store, product, locale);
+      const slug = textByLocale.get(locale)?.slug;
+      const url = buildProductLink(store, product, locale, slug);
       const outcome = await fetchLinkStatus(url);
       results.push({ market, locale, url, ...outcome });
     }
@@ -265,7 +277,7 @@ function buildProductInput(
     productAttributes: {
       title: text.name,
       description: text.description,
-      link: buildProductLink(store, product, locale),
+      link: buildProductLink(store, product, locale, text.slug),
       imageLink: product.images[0],
       additionalImageLinks: product.images.slice(1, 10),
       availability: product.status === "active" ? "IN_STOCK" : "OUT_OF_STOCK",

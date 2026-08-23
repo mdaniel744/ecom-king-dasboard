@@ -82,7 +82,7 @@ export async function GET(
     eligibleProducts.map(async (p: Product) => {
       const textByLocale = await getTranslationsByLocale(store as Store, p);
       const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
-      const link = buildProductLink(store as Store, p, locale);
+      const link = buildProductLink(store as Store, p, locale, text.slug);
       const hasIdentifier = Boolean(p.brand && p.mpn);
       const productType = breadcrumb(p.category_id);
       const additionalImages = (p.images ?? []).slice(1, 10);

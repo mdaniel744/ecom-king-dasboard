@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { translateText } from "@/lib/translate";
+import { slugify } from "@/lib/slug";
 import type { Store } from "@/lib/types";
 
 type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
@@ -94,6 +95,32 @@ export async function syncTranslations({
             },
             { onConflict: "entity_type,entity_id,field_name,locale" }
           );
+
+          // Some real storefronts (STF, confirmed live) translate the
+          // product URL slug itself per language, not just the visible
+          // name — a plain word-translation cache doesn't cover that.
+          // Deriving it from the name we just translated (rather than a
+          // separate DeepSeek call) keeps it deterministic and in sync
+          // with that same translation, and reuses the exact slugify()
+          // the source-language slug was generated with.
+          if (entityType === "product" && fieldName === "name" && !lockedKeys.has(`${locale}:slug`)) {
+            try {
+              await supabaseAdmin.from("translations").upsert(
+                {
+                  store_id: store.id,
+                  entity_type: entityType,
+                  entity_id: entityId,
+                  field_name: "slug",
+                  locale,
+                  value: slugify(translated),
+                  translator: "ai",
+                },
+                { onConflict: "entity_type,entity_id,field_name,locale" }
+              );
+            } catch {
+              // best-effort, same rationale as below
+            }
+          }
         } catch {
           // Best-effort — see function doc comment. Leaves any prior
           // successful translation for this field/locale untouched.
