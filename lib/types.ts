@@ -36,6 +36,15 @@ export type Store = {
    * not "push everything," since that's what leaving every box unchecked
    * in Settings actually means to the person doing it. */
   google_push_locales: string[];
+  /** Per-market VAT rate as a percentage, e.g. {"NL": 21, "DE": 19} -- keyed
+   * by the same market codes as google_feed_labels. Product prices are
+   * always stored VAT-exclusive (net); a market with a rate configured here
+   * gets price * (1 + rate/100) submitted to Google Merchant instead of the
+   * raw net price. A market with no entry gets no VAT added (legacy
+   * behavior, unchanged) -- deliberately opt-in per market, not a platform
+   * default, since the correct rate genuinely varies by destination country
+   * and nobody should get a silently-wrong price the moment this shipped. */
+  vat_rates: Record<string, number>;
   /** Where new-inquiry notification emails are sent. Null until the store owner sets it in Settings. */
   notification_email: string | null;
   /** Branded "From" display name for outbound emails (e.g. "Kariv Glamour").

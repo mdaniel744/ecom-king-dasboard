@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildProductLink, getTranslationsByLocale } from "@/lib/google-merchant";
+import { buildProductLink, getTranslationsByLocale, applyVat } from "@/lib/google-merchant";
 import type { Product, Store } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export async function GET(
   const { data: store } = await supabaseAdmin
     .from("stores")
     .select(
-      "id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path, source_locale_has_prefix"
+      "id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path, source_locale_has_prefix, vat_rates"
     )
     .eq("id", storeId)
     .maybeSingle();
@@ -99,8 +99,8 @@ export async function GET(
     <g:image_link>${escapeXml(p.images[0])}</g:image_link>
     <g:condition>${p.condition}</g:condition>
     <g:availability>${p.status === "active" ? "in_stock" : "out_of_stock"}</g:availability>
-    <g:price>${escapeXml(formatPrice(p.price!, p.currency))}</g:price>
-    ${p.sale_price ? `<g:sale_price>${escapeXml(formatPrice(p.sale_price, p.currency))}</g:sale_price>` : ""}
+    <g:price>${escapeXml(formatPrice(applyVat(p.price!, market, store as Store), p.currency))}</g:price>
+    ${p.sale_price ? `<g:sale_price>${escapeXml(formatPrice(applyVat(p.sale_price, market, store as Store), p.currency))}</g:sale_price>` : ""}
     ${p.mpn ? `<g:mpn>${escapeXml(p.mpn)}</g:mpn>` : "<g:mpn/>"}
     ${p.brand ? `<g:brand>${escapeXml(p.brand)}</g:brand>` : ""}
     <g:canonical_link>${escapeXml(link)}</g:canonical_link>

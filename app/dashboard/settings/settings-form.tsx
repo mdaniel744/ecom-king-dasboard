@@ -101,6 +101,9 @@ export function SettingsForm({ store }: { store: Store }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [enabledLocales, setEnabledLocales] = useState<string[]>(store.enabled_locales ?? []);
+  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(
+    store.google_feed_labels?.length ? store.google_feed_labels : [store.google_feed_label]
+  );
   const [pasteUrl, setPasteUrl] = useState("");
   const [pasteFeedback, setPasteFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const productUrlPathRef = useRef<HTMLInputElement>(null);
@@ -282,11 +285,58 @@ export function SettingsForm({ store }: { store: Store }) {
                       : [store.google_feed_label]
                     ).includes(option.value)
                   }
+                  onChange={(e) => {
+                    setSelectedMarkets((prev) =>
+                      e.target.checked ? [...prev, option.value] : prev.filter((m) => m !== option.value)
+                    );
+                  }}
                   className="h-4 w-4 rounded border-border accent-primary"
                 />
                 {option.label}
               </label>
             ))}
+          </div>
+
+          <div className="mt-4 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-sm">VAT Rate per Market</Label>
+              <FieldInfo
+                title="VAT Rate per Market"
+                description={
+                  "Your product prices are stored VAT-exclusive (net) -- the price before tax. Google Merchant needs the final price a customer actually pays, so enter each market's VAT percentage here and it gets added automatically only for that market's listings.\n\n" +
+                  "Leave a market blank to submit its raw net price unchanged (no VAT added) -- useful if you already price VAT-inclusive for that market elsewhere, or haven't confirmed the rate yet. Nothing changes for a market until you fill in a rate here."
+                }
+              />
+            </div>
+            {selectedMarkets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Check at least one market above first.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                {FEED_LABEL_OPTIONS.filter((option) => selectedMarkets.includes(option.value)).map((option) => (
+                  <div key={option.value} className="flex items-center gap-2">
+                    <Label htmlFor={`vat_rate_${option.value}`} className="w-10 shrink-0 text-xs">
+                      {option.value}
+                    </Label>
+                    <div className="relative flex-1">
+                      <Input
+                        id={`vat_rate_${option.value}`}
+                        name={`vat_rate_${option.value}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        placeholder="e.g. 21"
+                        defaultValue={store.vat_rates?.[option.value] ?? ""}
+                        className="text-sm"
+                      />
+                      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="mt-4 space-y-1.5 rounded-md border border-dashed border-border p-3">
             <Label htmlFor="paste_product_url" className="text-xs">

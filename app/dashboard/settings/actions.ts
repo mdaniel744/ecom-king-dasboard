@@ -24,6 +24,7 @@ const settingsSchema = z.object({
     .max(100)
     .regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens — no slashes or spaces"),
   sourceLocaleHasPrefix: z.boolean(),
+  vatRates: z.record(z.string(), z.number().min(0).max(100)),
   enabledLocales: z.array(z.string().trim().min(2).max(10)).max(20),
   googlePushLocales: z.array(z.string().trim().min(2).max(10)).max(20),
   notificationEmail: z.preprocess(
@@ -53,6 +54,19 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
     const googleFeedLabelRaw = googleFeedLabelsRaw[0] || store.google_feed_label || "US";
     const productUrlPathRaw = (formData.get("product_url_path") as string)?.trim() || "products";
     const sourceLocaleHasPrefixRaw = formData.get("source_locale_has_prefix") === "on";
+    // Only markets actually checked in this submission get a VAT rate --
+    // an empty/invalid value for a checked market just means "no VAT for
+    // this market" (matches the field's own placeholder behavior), not a
+    // validation error, since leaving it blank is a deliberate valid choice.
+    const vatRatesRaw: Record<string, number> = {};
+    for (const market of googleFeedLabelsRaw) {
+      const raw = (formData.get(`vat_rate_${market}`) as string)?.trim();
+      if (!raw) continue;
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+        vatRatesRaw[market] = parsed;
+      }
+    }
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
     // Only checkboxes for currently-enabled locales are ever rendered, but
     // clamp here too in case enabledLocales was narrowed in the same submit
@@ -74,6 +88,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleFeedLabels,
       productUrlPath,
       sourceLocaleHasPrefix,
+      vatRates,
       enabledLocales,
       googlePushLocales,
       notificationEmail,
@@ -88,6 +103,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleFeedLabels: googleFeedLabelsRaw.length > 0 ? googleFeedLabelsRaw : [googleFeedLabelRaw],
       productUrlPath: productUrlPathRaw,
       sourceLocaleHasPrefix: sourceLocaleHasPrefixRaw,
+      vatRates: vatRatesRaw,
       enabledLocales: enabledLocalesRaw,
       googlePushLocales: googlePushLocalesRaw,
       notificationEmail: notificationEmailRaw,
@@ -105,6 +121,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         google_feed_labels: googleFeedLabels,
         product_url_path: productUrlPath,
         source_locale_has_prefix: sourceLocaleHasPrefix,
+        vat_rates: vatRates,
         enabled_locales: enabledLocales,
         google_push_locales: googlePushLocales,
         notification_email: notificationEmail,

@@ -248,6 +248,20 @@ export async function checkProductLinks(store: Store, product: Product): Promise
   return results;
 }
 
+/**
+ * Product prices are always stored VAT-exclusive (net) -- see
+ * stores.vat_rates doc comment. Adds this market's configured VAT rate, if
+ * any, and rounds to 2 decimal places before the caller converts to micros,
+ * so the submitted price is a clean currency amount rather than carrying
+ * floating-point remainder digits. A market with no rate configured returns
+ * the price unchanged (opt-in, not a platform default).
+ */
+export function applyVat(price: number, market: string, store: Store): number {
+  const rate = store.vat_rates?.[market];
+  if (!rate) return price;
+  return Math.round(price * (1 + rate / 100) * 100) / 100;
+}
+
 function buildProductInput(
   store: Store,
   product: Product,
@@ -283,12 +297,12 @@ function buildProductInput(
       availability: product.status === "active" ? "IN_STOCK" : "OUT_OF_STOCK",
       condition: CONDITION_MAP[product.condition],
       price: {
-        amountMicros: String(Math.round(product.price! * 1_000_000)),
+        amountMicros: String(Math.round(applyVat(product.price!, feedLabel, store) * 1_000_000)),
         currencyCode: product.currency,
       },
       salePrice: product.sale_price
         ? {
-            amountMicros: String(Math.round(product.sale_price * 1_000_000)),
+            amountMicros: String(Math.round(applyVat(product.sale_price, feedLabel, store) * 1_000_000)),
             currencyCode: product.currency,
           }
         : undefined,
