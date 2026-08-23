@@ -25,7 +25,9 @@ export async function GET(
 
   const { data: store } = await supabaseAdmin
     .from("stores")
-    .select("id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path")
+    .select(
+      "id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path, source_locale_has_prefix"
+    )
     .eq("id", storeId)
     .maybeSingle();
 
