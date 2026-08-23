@@ -315,9 +315,9 @@ export function SettingsForm({ store }: { store: Store }) {
             live API push — right now. This is separate from Translation above: uncheck a
             language here to keep translating it for your storefront without submitting it to
             Google yet. Your Content Language ({store.google_content_language}) is always
-            submitted regardless of what&apos;s checked below. Note: unchecking every box below
-            currently falls back to pushing every translated language — there&apos;s no way to
-            pause Google sync entirely from here yet.
+            submitted regardless of what&apos;s checked below. Leave everything below unchecked
+            to submit only your Content Language listing — nothing else goes to Google until you
+            check it here.
           </p>
         </CardHeader>
         <CardContent>
@@ -334,11 +334,7 @@ export function SettingsForm({ store }: { store: Store }) {
                       type="checkbox"
                       name="google_push_locales"
                       value={option.value}
-                      defaultChecked={
-                        store.google_push_locales.length > 0
-                          ? store.google_push_locales.includes(option.value)
-                          : true
-                      }
+                      defaultChecked={store.google_push_locales.includes(option.value)}
                       className="h-4 w-4 rounded border-border accent-primary"
                     />
                     {option.label}

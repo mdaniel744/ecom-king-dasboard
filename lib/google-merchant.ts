@@ -81,10 +81,15 @@ function getAuthClient(): JWT {
  * Locales come from google_push_locales, NOT enabled_locales directly —
  * those are two separate settings. enabled_locales controls what gets
  * AI-translated (for the storefront); google_push_locales is the subset of
- * those a store has chosen to actually go live on Google right now. Empty
- * google_push_locales means "hasn't been narrowed down yet," so it falls
- * back to enabled_locales — this is what keeps every store's behavior
- * unchanged until they explicitly opt into a narrower set in Settings.
+ * those a store has explicitly opted to submit to Google. Empty
+ * google_push_locales means nothing extra has been opted in yet, so only
+ * the source language is pushed — it must NEVER fall back to enabled_locales
+ * (every translated language), since leaving every box unchecked in
+ * Settings is the user's explicit "don't push these yet" signal, not "push
+ * all of them." An earlier version fell back to enabled_locales here, which
+ * silently submitted every translated language to Merchant Center the
+ * moment a store enabled a translation, regardless of what was actually
+ * checked under Push to Google.
  * The XML feed (Settings page's Feed URL card) intentionally does NOT use
  * this function — it still enumerates every enabled_locales combo, since a
  * store picks which feed URLs to actually add to Merchant Center by hand.
@@ -96,10 +101,7 @@ function getMarketsAndLocales(store: Store): { markets: string[]; locales: strin
       : [store.google_feed_label];
 
   const sourceLocale = store.google_content_language || "en";
-  const pushLocales =
-    store.google_push_locales && store.google_push_locales.length > 0
-      ? store.google_push_locales
-      : store.enabled_locales ?? [];
+  const pushLocales = store.google_push_locales ?? [];
   const locales = Array.from(new Set([sourceLocale, ...pushLocales]));
 
   return { markets, locales };
