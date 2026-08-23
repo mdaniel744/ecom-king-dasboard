@@ -17,6 +17,13 @@ export type Store = {
    * (e.g. "products" for mycontainergmbh.com/products/slug). Varies per
    * store — confirmed by testing the real live site, never assumed. */
   product_url_path: string;
+  /** Per-locale override for the product URL word, e.g. {"fr": "conteneurs"}
+   * -- for a store whose real site translates the path segment itself per
+   * language, not just the surrounding slug (confirmed live on STF:
+   * containers/container/contenedores/conteneurs across nl/de/es/fr). A
+   * locale with no entry here falls back to product_url_path. Empty by
+   * default -- most stores use one word for every language. */
+  product_url_path_overrides: Record<string, string>;
   /** Whether this store's OWN source language still gets an explicit locale
    * prefix (e.g. stfcontainer.com/nl/... even though nl is the source
    * language) rather than the more common no-prefix-for-source convention

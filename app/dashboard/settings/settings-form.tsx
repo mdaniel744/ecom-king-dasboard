@@ -108,6 +108,7 @@ export function SettingsForm({ store }: { store: Store }) {
   const [pasteFeedback, setPasteFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const productUrlPathRef = useRef<HTMLInputElement>(null);
   const sourceLocalePrefixRef = useRef<HTMLInputElement>(null);
+  const wordOverrideRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   function handleExtractWord() {
     const result = parseProductUrlWord(pasteUrl, store);
@@ -115,25 +116,41 @@ export function SettingsForm({ store }: { store: Store }) {
       setPasteFeedback({ kind: "error", text: result.error });
       return;
     }
-    if (productUrlPathRef.current) productUrlPathRef.current.value = result.word;
 
-    if (result.detectedLocale && result.isSourceLocale && sourceLocalePrefixRef.current) {
-      sourceLocalePrefixRef.current.checked = true;
-      setPasteFeedback({
-        kind: "success",
-        text: `Set to "${result.word}". Also detected "${result.detectedLocale}" (your Content Language) right in the URL, so "My site keeps a language code..." below is now checked too.`,
-      });
-    } else if (result.detectedLocale) {
-      setPasteFeedback({
-        kind: "success",
-        text: `Set to "${result.word}". This link was in "${result.detectedLocale}", not your Content Language — paste a link from your site's own main language too if you want the prefix setting below checked automatically.`,
-      });
-    } else {
-      setPasteFeedback({
-        kind: "success",
-        text: `Set to "${result.word}". No language code found in this URL.`,
-      });
+    // No locale in the URL, or it matches the source language: this is the
+    // shared default word, not a per-language exception -- fill the main
+    // field, same as before.
+    if (!result.detectedLocale || result.isSourceLocale) {
+      if (productUrlPathRef.current) productUrlPathRef.current.value = result.word;
+
+      if (result.detectedLocale && sourceLocalePrefixRef.current) {
+        sourceLocalePrefixRef.current.checked = true;
+        setPasteFeedback({
+          kind: "success",
+          text: `Set to "${result.word}". Also detected "${result.detectedLocale}" (your Content Language) right in the URL, so "My site keeps a language code..." below is now checked too.`,
+        });
+      } else {
+        setPasteFeedback({ kind: "success", text: `Set to "${result.word}". No language code found in this URL.` });
+      }
+      return;
     }
+
+    // A non-source language was detected -- this word only belongs to that
+    // one language, not every language, so it goes into that language's own
+    // exception field instead of overwriting the shared word above.
+    const overrideInput = wordOverrideRefs.current[result.detectedLocale];
+    if (!overrideInput) {
+      setPasteFeedback({
+        kind: "error",
+        text: `Detected "${result.detectedLocale}" with word "${result.word}", but "${result.detectedLocale}" isn't checked under Translation yet — enable it there first, then paste this link again.`,
+      });
+      return;
+    }
+    overrideInput.value = result.word;
+    setPasteFeedback({
+      kind: "success",
+      text: `Detected "${result.detectedLocale}" → set its word exception to "${result.word}" below, without touching the main word above (which still applies to every other language).`,
+    });
   }
 
   function handleSubmit(formData: FormData) {
@@ -388,6 +405,44 @@ export function SettingsForm({ store }: { store: Store }) {
               → the word is <code>produkt</code>.
             </p>
           </div>
+
+          {enabledLocales.filter((l) => l !== store.google_content_language).length > 0 && (
+            <div className="mt-4 space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Label className="text-sm">Per-Language Word Exceptions</Label>
+                <FieldInfo
+                  title="Per-Language Word Exceptions"
+                  description={
+                    'Most sites use the same word for every language, just with a different language code in front — leave these blank for that (the common case).\n\n' +
+                    'Some sites translate the word itself too, e.g. stfcontainer.com uses "containers" for English but "conteneurs" for French, "container" for German, and "contenedores" for Spanish, confirmed live. Fill in a language\'s box below only if its real product pages use a different word than the main "Product Page Word" above.\n\n' +
+                    'Easiest way: paste a real product URL in that language into "Paste a real product page URL" above — if it detects a non-source language, it fills in that language\'s box here automatically instead of the main word.'
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                {enabledLocales
+                  .filter((l) => l !== store.google_content_language)
+                  .map((locale) => (
+                    <div key={locale} className="flex items-center gap-2">
+                      <Label htmlFor={`product_url_path_override_${locale}`} className="w-10 shrink-0 text-xs">
+                        {locale}
+                      </Label>
+                      <Input
+                        id={`product_url_path_override_${locale}`}
+                        name={`product_url_path_override_${locale}`}
+                        placeholder="same as above"
+                        defaultValue={store.product_url_path_overrides?.[locale] ?? ""}
+                        className="text-sm"
+                        ref={(el) => {
+                          wordOverrideRefs.current[locale] = el;
+                        }}
+                      />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 space-y-1.5">
             <label className="flex items-start gap-2 text-sm">
               <input

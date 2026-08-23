@@ -24,6 +24,10 @@ const settingsSchema = z.object({
     .max(100)
     .regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens — no slashes or spaces"),
   sourceLocaleHasPrefix: z.boolean(),
+  productUrlPathOverrides: z.record(
+    z.string(),
+    z.string().trim().min(1).max(100).regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens")
+  ),
   vatRates: z.record(z.string(), z.number().min(0).max(100)),
   enabledLocales: z.array(z.string().trim().min(2).max(10)).max(20),
   googlePushLocales: z.array(z.string().trim().min(2).max(10)).max(20),
@@ -68,6 +72,14 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       }
     }
     const enabledLocalesRaw = formData.getAll("enabled_locales") as string[];
+    // Only a locale actually enabled for translation gets its own word
+    // exception field rendered -- a blank box means "use the main word
+    // above for this language," not an error.
+    const productUrlPathOverridesRaw: Record<string, string> = {};
+    for (const locale of enabledLocalesRaw) {
+      const raw = (formData.get(`product_url_path_override_${locale}`) as string)?.trim();
+      if (raw) productUrlPathOverridesRaw[locale] = raw;
+    }
     // Only checkboxes for currently-enabled locales are ever rendered, but
     // clamp here too in case enabledLocales was narrowed in the same submit
     // (a stale push-locale value shouldn't survive its translation target
@@ -88,6 +100,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleFeedLabels,
       productUrlPath,
       sourceLocaleHasPrefix,
+      productUrlPathOverrides,
       vatRates,
       enabledLocales,
       googlePushLocales,
@@ -103,6 +116,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       googleFeedLabels: googleFeedLabelsRaw.length > 0 ? googleFeedLabelsRaw : [googleFeedLabelRaw],
       productUrlPath: productUrlPathRaw,
       sourceLocaleHasPrefix: sourceLocaleHasPrefixRaw,
+      productUrlPathOverrides: productUrlPathOverridesRaw,
       vatRates: vatRatesRaw,
       enabledLocales: enabledLocalesRaw,
       googlePushLocales: googlePushLocalesRaw,
@@ -121,6 +135,7 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         google_feed_labels: googleFeedLabels,
         product_url_path: productUrlPath,
         source_locale_has_prefix: sourceLocaleHasPrefix,
+        product_url_path_overrides: productUrlPathOverrides,
         vat_rates: vatRates,
         enabled_locales: enabledLocales,
         google_push_locales: googlePushLocales,

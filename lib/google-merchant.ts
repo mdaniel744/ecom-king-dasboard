@@ -183,6 +183,11 @@ export async function getTranslationsByLocale(
  * link would point at a URL that only works via a redirect, not the real
  * canonical page, which Google Merchant penalizes.
  *
+ * The word itself can also differ per locale (STF again: containers/
+ * container/contenedores/conteneurs across nl/de/es/fr) — store.
+ * product_url_path_overrides[locale] wins when set, falling back to the
+ * single product_url_path word for every locale that doesn't need one.
+ *
  * Exported — the XML feed route builds links the exact same way, so a
  * product's link is identical whether it reached Google via API push or
  * via the XML feed.
@@ -192,7 +197,8 @@ export function buildProductLink(store: Store, product: Product, locale: string,
   const trimmedBase = base.replace(/\/$/, "");
   const isSource = locale === store.google_content_language;
   const localePrefix = isSource && !store.source_locale_has_prefix ? "" : `/${locale}`;
-  const path = store.product_url_path.replace(/^\/|\/$/g, "");
+  const word = store.product_url_path_overrides?.[locale] || store.product_url_path;
+  const path = word.replace(/^\/|\/$/g, "");
   return `${trimmedBase}${localePrefix}/${path}/${localizedSlug || product.slug}`;
 }
 
