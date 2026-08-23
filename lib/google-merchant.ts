@@ -186,6 +186,56 @@ export function buildProductLink(store: Store, product: Product, locale: string)
   return `${trimmedBase}${localePrefix}/${path}/${product.slug}`;
 }
 
+export type LinkCheckResult = {
+  market: string;
+  locale: string;
+  url: string;
+  status: "ok" | "not_found" | "error";
+  httpStatus?: number;
+};
+
+async function fetchLinkStatus(url: string): Promise<Omit<LinkCheckResult, "market" | "locale" | "url">> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    let res = await fetch(url, { method: "HEAD", redirect: "follow", signal: controller.signal });
+    // Some storefronts don't implement HEAD (405) -- retry with GET rather
+    // than misreporting a perfectly working page as broken.
+    if (res.status === 405) {
+      res = await fetch(url, { method: "GET", redirect: "follow", signal: controller.signal });
+    }
+    return { status: res.ok ? "ok" : "not_found", httpStatus: res.status };
+  } catch {
+    return { status: "error" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Live-checks every market x locale link this store is configured to
+ * eventually need — every enabled_locales combination, not just the
+ * narrower google_push_locales subset already live on Google — so a broken
+ * Product Page Word / Language Prefix setting can be caught in Settings
+ * before a language is ever turned on for Google, not just after. Reuses
+ * buildProductLink so this tests the exact same URL construction the real
+ * sync (API push and XML feed) both rely on.
+ */
+export async function checkProductLinks(store: Store, product: Product): Promise<LinkCheckResult[]> {
+  const markets = store.google_feed_labels?.length ? store.google_feed_labels : [store.google_feed_label];
+  const locales = Array.from(new Set([store.google_content_language, ...(store.enabled_locales ?? [])]));
+
+  const results: LinkCheckResult[] = [];
+  for (const market of markets) {
+    for (const locale of locales) {
+      const url = buildProductLink(store, product, locale);
+      const outcome = await fetchLinkStatus(url);
+      results.push({ market, locale, url, ...outcome });
+    }
+  }
+  return results;
+}
+
 function buildProductInput(
   store: Store,
   product: Product,

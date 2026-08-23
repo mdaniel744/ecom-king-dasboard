@@ -27,12 +27,14 @@ export type Store = {
   /** Locales to auto-translate into, beyond google_content_language (the
    * store's own source language). e.g. ["en","fr"] for a German-source store. */
   enabled_locales: string[];
-  /** Subset of enabled_locales to actually submit to Google (API push +
-   * XML feed link enumeration on the Settings page) — distinct from
-   * enabled_locales, which only controls translation. Empty means "not yet
-   * narrowed down": falls back to enabled_locales so existing stores keep
-   * their current behavior unchanged. Source language is always pushed
-   * regardless of this list. */
+  /** Subset of enabled_locales to actually submit to Google via the API push
+   * — distinct from enabled_locales, which only controls translation (and
+   * from the XML feed, which still enumerates every enabled_locales combo
+   * regardless of this list). Empty means nothing extra has been opted in
+   * yet: only the source language is pushed. Never falls back to
+   * enabled_locales — an empty selection must mean "push nothing extra,"
+   * not "push everything," since that's what leaving every box unchecked
+   * in Settings actually means to the person doing it. */
   google_push_locales: string[];
   /** Where new-inquiry notification emails are sent. Null until the store owner sets it in Settings. */
   notification_email: string | null;

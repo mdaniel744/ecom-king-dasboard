@@ -14,10 +14,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
-import { updateStoreSettings } from "@/app/dashboard/settings/actions";
+import { updateStoreSettings, testProductLinks } from "@/app/dashboard/settings/actions";
 import { CONTENT_LANGUAGE_OPTIONS, FEED_LABEL_OPTIONS } from "@/lib/merchant-locales";
 import { FieldInfo } from "@/components/ui/field-info";
 import type { Store } from "@/lib/types";
+import type { LinkCheckResult } from "@/lib/google-merchant";
 
 export function SettingsForm({ store }: { store: Store }) {
   const [isPending, startTransition] = useTransition();
@@ -226,6 +227,8 @@ export function SettingsForm({ store }: { store: Store }) {
         </CardContent>
       </Card>
 
+      <TestLinksCard store={store} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Email Notifications</CardTitle>
@@ -412,6 +415,94 @@ function FeedUrlCard({ store }: { store: Store }) {
             </div>
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const STATUS_STYLE: Record<LinkCheckResult["status"], string> = {
+  ok: "bg-emerald-100 text-emerald-700",
+  not_found: "bg-red-100 text-red-700",
+  error: "bg-amber-100 text-amber-700",
+};
+
+function statusLabel(r: LinkCheckResult) {
+  if (r.status === "ok") return `✅ ${r.httpStatus}`;
+  if (r.status === "not_found") return `❌ ${r.httpStatus ?? "Not found"}`;
+  return "⚠️ Error";
+}
+
+function TestLinksCard({ store }: { store: Store }) {
+  const [isPending, startTransition] = useTransition();
+  const [results, setResults] = useState<LinkCheckResult[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleTest() {
+    setError(null);
+    startTransition(async () => {
+      const result = await testProductLinks();
+      if (result.success) {
+        setResults(result.data);
+      } else {
+        setResults(null);
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <Card className="border-emerald-200 bg-emerald-50/60">
+      <CardHeader>
+        <CardTitle className="text-base text-emerald-900">Test My Links</CardTitle>
+        <p className="text-sm text-emerald-800/80">
+          Live-checks the exact link every configured market/language combination would send to
+          Google, against one of your real products — catches a broken Product Page Word or
+          Language Prefix setting the moment you change it, instead of finding out from a 404
+          later. Click a result to open it and see for yourself.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleTest}
+          disabled={isPending || !store.domain}
+          className="border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"
+        >
+          {isPending ? "Testing..." : "Test My Links"}
+        </Button>
+        {!store.domain && (
+          <p className="text-xs text-emerald-800/70">Add your store&apos;s domain above first.</p>
+        )}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {results && (
+          <div className="space-y-2">
+            {results.map((r) => (
+              <a
+                key={`${r.market}-${r.locale}`}
+                href={r.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2 hover:border-emerald-400"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {r.market} / {r.locale}
+                    {r.locale === store.google_content_language ? " (source)" : ""}
+                  </p>
+                  <p className="truncate text-xs text-primary underline">{r.url}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[r.status]}`}
+                >
+                  {statusLabel(r)}
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

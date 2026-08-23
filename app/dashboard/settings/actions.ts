@@ -6,6 +6,8 @@ import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validate } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
+import { checkProductLinks, type LinkCheckResult } from "@/lib/google-merchant";
+import type { Product } from "@/lib/types";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Store name is required").max(200),
@@ -115,6 +117,43 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
     revalidatePath("/dashboard/settings");
     revalidatePath("/dashboard");
     return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+/**
+ * Live-checks every market x locale product link this store is configured
+ * for, against one real product, so a broken Product Page Word / Language
+ * Prefix setting is caught by clicking a button in Settings instead of by a
+ * customer (or colleague) hitting a 404 from Google.
+ */
+export async function testProductLinks(): Promise<ActionResult<LinkCheckResult[]>> {
+  try {
+    const store = await getCurrentStore();
+    if (!store.domain) {
+      return { success: false, error: "Add your store's domain above before testing links.", fieldErrors: {} };
+    }
+
+    const { data: product } = await supabaseAdmin
+      .from("products")
+      .select("*")
+      .eq("store_id", store.id)
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!product) {
+      return {
+        success: false,
+        error: "No active product found to test links against — add or activate one first.",
+        fieldErrors: {},
+      };
+    }
+
+    const results = await checkProductLinks(store, product as Product);
+    return ok(results);
   } catch (err) {
     return toActionResult(err);
   }
