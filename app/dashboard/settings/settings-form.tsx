@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,10 +20,118 @@ import { FieldInfo } from "@/components/ui/field-info";
 import type { Store } from "@/lib/types";
 import type { LinkCheckResult } from "@/lib/google-merchant";
 
+type ParsedProductUrl = { word: string; detectedLocale: string | null; isSourceLocale: boolean };
+
+/**
+ * Extracts Product Page Word (and, when possible, a source-locale-prefix
+ * signal) from one real pasted product URL instead of asking someone to
+ * read it off by eye — that manual step is exactly what drifted wrong for
+ * STF (word was "products", the real site used "containers"). Domain +
+ * last path segment (the product's own slug) are stripped; a recognized
+ * locale code leading the remaining path is treated as the language
+ * prefix, not part of the word — whatever's left is the word, joined back
+ * with "/" in the rare case the real path has more than one segment there.
+ */
+function parseProductUrlWord(rawUrl: string, store: Store): ParsedProductUrl | { error: string } {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return { error: "Paste a URL first." };
+
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return { error: "That doesn't look like a valid URL." };
+  }
+
+  const normalizeHost = (h: string) => h.replace(/^www\./i, "").toLowerCase();
+  const pastedHost = normalizeHost(url.hostname);
+  const storeHost = store.domain
+    ? normalizeHost(
+        store.domain
+          .replace(/^https?:\/\//i, "")
+          .replace(/\/.*$/, "")
+      )
+    : "";
+  if (storeHost && pastedHost !== storeHost) {
+    return {
+      error: `That URL's domain (${pastedHost || "none"}) doesn't match this store's domain (${storeHost}). Paste a link from this store's own site.`,
+    };
+  }
+
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length < 2) {
+    return {
+      error:
+        "That doesn't look like a single product page — make sure it points to one specific product, not the homepage or a list page.",
+    };
+  }
+
+  // Last segment is the product's own slug — every product has a different
+  // one, so it's never part of the word and is always ignored here.
+  const pathSegments = segments.slice(0, -1);
+
+  const knownLocales = new Set(
+    [store.google_content_language, ...(store.enabled_locales ?? []), ...CONTENT_LANGUAGE_OPTIONS.map((o) => o.value)]
+      .filter(Boolean)
+      .map((l) => l!.toLowerCase())
+  );
+
+  let detectedLocale: string | null = null;
+  let wordSegments = pathSegments;
+  if (pathSegments.length > 0 && knownLocales.has(pathSegments[0].toLowerCase())) {
+    detectedLocale = pathSegments[0].toLowerCase();
+    wordSegments = pathSegments.slice(1);
+  }
+
+  if (wordSegments.length === 0) {
+    return {
+      error:
+        "Couldn't find a word between the language code and the product name — double check this is a real single-product page.",
+    };
+  }
+
+  return {
+    word: wordSegments.join("/"),
+    detectedLocale,
+    isSourceLocale: detectedLocale !== null && detectedLocale === store.google_content_language.toLowerCase(),
+  };
+}
+
 export function SettingsForm({ store }: { store: Store }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [enabledLocales, setEnabledLocales] = useState<string[]>(store.enabled_locales ?? []);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [pasteFeedback, setPasteFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const productUrlPathRef = useRef<HTMLInputElement>(null);
+  const sourceLocalePrefixRef = useRef<HTMLInputElement>(null);
+
+  function handleExtractWord() {
+    const result = parseProductUrlWord(pasteUrl, store);
+    if ("error" in result) {
+      setPasteFeedback({ kind: "error", text: result.error });
+      return;
+    }
+    if (productUrlPathRef.current) productUrlPathRef.current.value = result.word;
+
+    if (result.detectedLocale && result.isSourceLocale && sourceLocalePrefixRef.current) {
+      sourceLocalePrefixRef.current.checked = true;
+      setPasteFeedback({
+        kind: "success",
+        text: `Set to "${result.word}". Also detected "${result.detectedLocale}" (your Content Language) right in the URL, so "My site keeps a language code..." below is now checked too.`,
+      });
+    } else if (result.detectedLocale) {
+      setPasteFeedback({
+        kind: "success",
+        text: `Set to "${result.word}". This link was in "${result.detectedLocale}", not your Content Language — paste a link from your site's own main language too if you want the prefix setting below checked automatically.`,
+      });
+    } else {
+      setPasteFeedback({
+        kind: "success",
+        text: `Set to "${result.word}". No language code found in this URL.`,
+      });
+    }
+  }
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -180,6 +288,32 @@ export function SettingsForm({ store }: { store: Store }) {
               </label>
             ))}
           </div>
+          <div className="mt-4 space-y-1.5 rounded-md border border-dashed border-border p-3">
+            <Label htmlFor="paste_product_url" className="text-xs">
+              Not sure? Paste a real product page URL instead
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="paste_product_url"
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                placeholder="e.g. https://diecontainers.com/produkt/10-fuss-container"
+                className="text-sm"
+              />
+              <Button type="button" variant="outline" onClick={handleExtractWord} className="shrink-0">
+                Extract
+              </Button>
+            </div>
+            {pasteFeedback && (
+              <p className={pasteFeedback.kind === "error" ? "text-xs text-destructive" : "text-xs text-emerald-700"}>
+                {pasteFeedback.text}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Fills in the word below (and the language prefix setting, if detected) automatically — no need to read
+              the URL apart by eye.
+            </p>
+          </div>
           <div className="mt-4 space-y-1.5">
             <div className="flex items-center gap-1.5">
               <Label htmlFor="product_url_path">Product Page Word</Label>
@@ -188,7 +322,7 @@ export function SettingsForm({ store }: { store: Store }) {
                 description={
                   'This is NOT a link — just one plain word, no slashes, no "https://". We already know your domain and each product\'s own name, so this is the one missing piece: the single word your own website puts between them.\n\n' +
                   'Example: if a real product page on your site is diecontainers.com/produkt/10-fus-container, the word is "produkt". We build every link we send Google the same way: domain + this word + product name — automatically.\n\n' +
-                  'Make sure you\'re actually looking at a single product\'s page (not the shop list, home, or a category page). Copy the one word right after the domain — or, if there\'s a language code first (like /de/ or /nl/), the one word right after that. Example: domain.com/de/WORD/product-name → copy WORD. If you\'re not sure, ask whoever built your storefront.'
+                  'Make sure you\'re actually looking at a single product\'s page (not the shop list, home, or a category page). Copy the one word right after the domain — or, if there\'s a language code first (like /de/ or /nl/), the one word right after that. Example: domain.com/de/WORD/product-name → copy WORD. Easier: use "Paste a real product page URL" above and let it fill this in for you.'
                 }
               />
             </div>
@@ -197,6 +331,7 @@ export function SettingsForm({ store }: { store: Store }) {
               name="product_url_path"
               placeholder="e.g. produkt"
               defaultValue={store.product_url_path ?? "products"}
+              ref={productUrlPathRef}
             />
             <p className="text-xs text-muted-foreground">
               Not a link — just the one word. See diecontainers.com/<strong>produkt</strong>/some-item
@@ -210,6 +345,7 @@ export function SettingsForm({ store }: { store: Store }) {
                 name="source_locale_has_prefix"
                 defaultChecked={store.source_locale_has_prefix}
                 className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+                ref={sourceLocalePrefixRef}
               />
               <span>
                 My site keeps a language code in the address even on its main/default language
