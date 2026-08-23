@@ -82,11 +82,17 @@ export function ProductForm({
     initialAttrs.length ? initialAttrs : [["", ""]]
   );
 
-  const [images, setImages] = useState<string[]>(
-    product?.images?.length ? product.images : [""]
-  );
-  const [imageAlts, setImageAlts] = useState<string[]>(
-    product?.image_alts?.length ? product.image_alts : [""]
+  // images and image_alts used to be two separate parallel arrays kept "in
+  // sync" by every handler updating both at once — that's exactly what let
+  // them drift apart under a race (see handleAddImages). One array of
+  // {url, alt} pairs makes that class of bug structurally impossible: there
+  // is only ever one state to update, so there's nothing left to get out
+  // of sync.
+  type ImageSlot = { url: string; alt: string };
+  const [imageSlots, setImageSlots] = useState<ImageSlot[]>(() =>
+    product?.images?.length
+      ? product.images.map((url, i) => ({ url, alt: product.image_alts?.[i] ?? "" }))
+      : [{ url: "", alt: "" }]
   );
   const [generatingAltIndex, setGeneratingAltIndex] = useState<number | null>(null);
   const [isBulkUploading, setIsBulkUploading] = useState(false);
@@ -98,7 +104,7 @@ export function ProductForm({
 
     const statusVal = formData.get("status") as string;
     const priceVal = (formData.get("price") as string)?.trim();
-    const filledImages = images.filter((url) => url.trim());
+    const filledImages = imageSlots.filter((s) => s.url.trim());
 
     if (!name.trim()) {
       toast.error("Product title is required — it's how Google and your customers identify this product. Add a name before saving.");
@@ -147,15 +153,15 @@ export function ProductForm({
   }
 
   function updateImage(index: number, newValue: string) {
-    setImages((prev) => prev.map((url, i) => (i === index ? newValue : url)));
+    setImageSlots((prev) => prev.map((s, i) => (i === index ? { ...s, url: newValue } : s)));
   }
 
   function updateImageAlt(index: number, newValue: string) {
-    setImageAlts((prev) => {
-      const next = [...prev];
-      next[index] = newValue;
-      return next;
-    });
+    setImageSlots((prev) => prev.map((s, i) => (i === index ? { ...s, alt: newValue } : s)));
+  }
+
+  function removeImageSlot(index: number) {
+    setImageSlots((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleGenerateAlt(index: number) {
@@ -185,8 +191,6 @@ export function ProductForm({
 
     setIsBulkUploading(true);
     try {
-      const existingImages = images.filter((url) => url.trim());
-      const existingAlts = imageAlts.slice(0, existingImages.length);
       const uploadedUrls: string[] = [];
 
       for (const file of files) {
@@ -202,26 +206,29 @@ export function ProductForm({
       }
       if (uploadedUrls.length === 0) return;
 
-      setImages([...existingImages, ...uploadedUrls]);
-      setImageAlts([...existingAlts, ...uploadedUrls.map(() => "")]);
+      // Functional update reading the LATEST slots, not a snapshot taken
+      // before the (multi-second) upload loop above — this is what used to
+      // silently undo anything the user did mid-upload (remove a photo,
+      // swap one, edit an alt) whenever this write landed after theirs.
+      setImageSlots((prev) => [
+        ...prev.filter((s) => s.url.trim()),
+        ...uploadedUrls.map((url) => ({ url, alt: "" })),
+      ]);
       toast.success(`${uploadedUrls.length} image${uploadedUrls.length > 1 ? "s" : ""} uploaded`);
 
       // Auto-fill alt text for each new image so bulk uploads don't leave a
       // pile of manual "Generate" clicks behind — still fully editable after,
       // and the per-image button below still works to redo any of these.
+      // Matched back to its slot by URL (always unique — fresh UUID per
+      // upload) rather than by array position, so this can't write into the
+      // wrong slot even if the array changed shape in the meantime.
       if (name.trim()) {
-        const startIndex = existingImages.length;
         await Promise.all(
-          uploadedUrls.map(async (_, i) => {
-            const index = startIndex + i;
+          uploadedUrls.map(async (url, i) => {
             try {
-              const result = await generateImageAlt(name, description || null, brand || null, index);
+              const result = await generateImageAlt(name, description || null, brand || null, i);
               if (result.alt) {
-                setImageAlts((prev) => {
-                  const next = [...prev];
-                  next[index] = result.alt!;
-                  return next;
-                });
+                setImageSlots((prev) => prev.map((s) => (s.url === url ? { ...s, alt: result.alt! } : s)));
               }
             } catch {
               // best-effort — leave blank, manual Generate button covers it
@@ -484,25 +491,17 @@ export function ProductForm({
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {images.map((url, i) => (
+              {imageSlots.map((slot, i) => (
                 <div key={i} className="space-y-1.5">
                   <div className="flex items-center gap-2">
-                    <input type="hidden" name="images" value={url} />
+                    <input type="hidden" name="images" value={slot.url} />
                     <ImageUploadInput
-                      value={url}
+                      value={slot.url}
                       onChange={(newUrl) => updateImage(i, newUrl)}
                       folder="products"
                       emptyLabel={i === 0 ? "Choose Main Image" : "Choose Image"}
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setImages(images.filter((_, idx) => idx !== i));
-                        setImageAlts(imageAlts.filter((_, idx) => idx !== i));
-                      }}
-                    >
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeImageSlot(i)}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
@@ -517,7 +516,7 @@ export function ProductForm({
                       </div>
                       <Input
                         name="image_alts"
-                        value={imageAlts[i] ?? ""}
+                        value={slot.alt}
                         onChange={(e) => updateImageAlt(i, e.target.value)}
                         placeholder={i === 0 ? "e.g. Anthrazit grey 20ft container, front view" : "e.g. Container interior, side door open"}
                         className="text-sm"
