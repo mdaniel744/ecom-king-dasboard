@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const SYSTEM_PROMPT = `You are a helpful assistant for an e-commerce dashboard used by non-technical store owners.
 A Google Merchant Center sync error occurred. Explain it in plain, friendly language — no jargon, no API terms, no GCP references.
@@ -12,6 +14,15 @@ Example output:
 Return ONLY valid JSON. No markdown, no code fences, no extra text.`;
 
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  // Calls a paid, shared-across-every-tenant DeepSeek key -- this route is
+  // already behind Clerk auth via proxy.ts's default-deny middleware, but
+  // an authenticated user (or a compromised session) could otherwise still
+  // spam it by opening the same error Popover repeatedly.
+  if (!userId || !checkRateLimit(`explain-error:${userId}`, 20, 60_000)) {
+    return NextResponse.json({ explanation: null, action: null }, { status: 429 });
+  }
+
   const { error } = await req.json().catch(() => ({ error: "" }));
   if (!error) {
     return NextResponse.json({ explanation: "An unknown error occurred.", action: "Try syncing again." });

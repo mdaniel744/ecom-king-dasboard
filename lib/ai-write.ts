@@ -1,8 +1,10 @@
 "use server";
 
 import { z } from "zod";
+import { auth } from "@clerk/nextjs/server";
 import { validate } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const aiWriteSchema = z.object({
   text: z.string().trim().min(1, "Enter some text first.").max(5000, "Text is too long."),
@@ -37,6 +39,17 @@ export async function aiWriteField(
   fieldRole: string
 ): Promise<ActionResult<{ text: string }>> {
   try {
+    const { userId } = await auth();
+    // This calls a paid, shared-across-every-tenant DeepSeek key -- cap
+    // how often one signed-in user can click Generate/AI Suggest so a
+    // spammed button (or a compromised session) can't run up the whole
+    // platform's AI bill. Generous enough for normal editing (a burst of
+    // several fields on one product save) without being a real workflow
+    // limit for a legitimate operator.
+    if (!userId || !checkRateLimit(`ai-write:${userId}`, 20, 60_000)) {
+      throw new Error("Too many AI requests — please wait a moment and try again.");
+    }
+
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) throw new Error("AI writing is not configured — DEEPSEEK_API_KEY is missing.");
 
