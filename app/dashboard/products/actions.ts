@@ -38,18 +38,22 @@ const productPayloadSchema = z.object({
   category_id: z.string().uuid("Choose a valid category").nullable(),
   brand_id: z.string().uuid("Choose a valid brand").nullable(),
   collection_id: z.string().uuid("Choose a valid collection").nullable(),
+  family_id: z.string().uuid("Choose a valid product family").nullable(),
   reference_number: z.string().trim().max(200, "Reference number is too long").nullable(),
   images: z.array(z.string().trim().min(1).max(2000)).max(20, "Maximum 20 images"),
   image_alts: z.array(z.string().trim().max(500)).max(20),
   attributes: z.record(z.string(), z.string()),
 });
 
-/** Confirms a brand_id/collection_id a form submitted actually belongs to
- * this store, so a crafted request can't attach another store's brand. */
-async function assertOwnedByStore(table: "brands" | "collections", id: string | null, storeId: string) {
+/** Confirms a brand_id/collection_id/family_id a form submitted actually
+ * belongs to this store, so a crafted request can't attach another store's
+ * row. */
+const OWNERSHIP_LABEL = { brands: "brand", collections: "collection", product_families: "product family" } as const;
+
+async function assertOwnedByStore(table: keyof typeof OWNERSHIP_LABEL, id: string | null, storeId: string) {
   if (!id) return;
   const { data } = await supabaseAdmin.from(table).select("id").eq("id", id).eq("store_id", storeId).maybeSingle();
-  if (!data) throw new Error(`That ${table === "brands" ? "brand" : "collection"} doesn't belong to this store.`);
+  if (!data) throw new Error(`That ${OWNERSHIP_LABEL[table]} doesn't belong to this store.`);
 }
 
 function parseAttributes(formData: FormData): Record<string, string> {
@@ -82,9 +86,11 @@ async function buildProductPayload(formData: FormData, storeId: string) {
   const categoryId = formData.get("category_id") as string;
   const brandId = (formData.get("brand_id") as string) || null;
   const collectionId = (formData.get("collection_id") as string) || null;
+  const familyId = (formData.get("family_id") as string) || null;
 
   await assertOwnedByStore("brands", brandId, storeId);
   await assertOwnedByStore("collections", collectionId, storeId);
+  await assertOwnedByStore("product_families", familyId, storeId);
 
   return validate(productPayloadSchema, {
     name,
@@ -108,6 +114,7 @@ async function buildProductPayload(formData: FormData, storeId: string) {
     category_id: categoryId || null,
     brand_id: brandId,
     collection_id: collectionId,
+    family_id: familyId,
     reference_number: (formData.get("reference_number") as string)?.trim() || null,
     images: parseImages(formData),
     image_alts: parseImageAlts(formData),
@@ -130,6 +137,7 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 
     await syncProductTranslations(store, product as Product);
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/product-families");
     return ok();
   } catch (err) {
     return toActionResult(err);
@@ -154,6 +162,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
 
     await syncProductTranslations(store, product as Product);
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/product-families");
     return ok();
   } catch (err) {
     return toActionResult(err);

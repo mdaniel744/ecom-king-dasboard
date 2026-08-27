@@ -14,6 +14,7 @@ import {
   UserCheck,
   Type,
   PackageSearch,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ export type NavItem = {
 export const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Products", href: "/dashboard/products", icon: Package },
+  { label: "Product Families", href: "/dashboard/product-families", icon: Boxes },
   { label: "Categories", href: "/dashboard/categories", icon: FolderTree },
   { label: "Brands", href: "/dashboard/brands", icon: Tag },
   { label: "Collections", href: "/dashboard/collections", icon: Layers },

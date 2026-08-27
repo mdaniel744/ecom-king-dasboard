@@ -4,7 +4,7 @@ import { translateText } from "@/lib/translate";
 import { slugify } from "@/lib/slug";
 import type { Store } from "@/lib/types";
 
-type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
+type EntityType = "product" | "category" | "product_family" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
 
 type SyncParams = {
   store: Store;

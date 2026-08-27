@@ -24,7 +24,7 @@ import { TranslationEditor } from "@/components/dashboard/translation-editor";
 import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
 import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
 import { FieldInfo } from "@/components/ui/field-info";
-import type { Brand, Category, Collection, Product } from "@/lib/types";
+import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
@@ -42,6 +42,7 @@ type Props = {
   categories: Category[];
   brands?: Brand[];
   collections?: Collection[];
+  families?: ProductFamily[];
   attributeDefs: AttributeDef[];
   storeSourceLocale?: string;
   enabledLocales?: string[];
@@ -53,6 +54,7 @@ export function ProductForm({
   categories,
   brands = [],
   collections = [],
+  families = [],
   attributeDefs,
   storeSourceLocale = "en",
   enabledLocales = [],
@@ -734,6 +736,30 @@ export function ProductForm({
                   </SelectContent>
                 </Select>
               </div>
+
+              {families.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="family_id">Product Family <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                    <FieldInfo
+                      title="Product Family"
+                      description="Only set this if this product is one of several near-identical products that are really the same item in different sizes/colours/conditions (e.g. this specific 'Used, Blue, 20ft' container belongs to the '20ft Standard Container' family). This never changes this product's own price, SKU, images, or anything else — it only groups it with its siblings for the storefront's variant picker and for Google Merchant's item grouping. Leave as None for a standalone product, which is what most products should be. Manage families from the Product Families page in the sidebar."
+                    />
+                  </div>
+                  <Select name="family_id" defaultValue={product?.family_id ?? ""}>
+                    <SelectTrigger id="family_id">
+                      <SelectValue placeholder="None — standalone product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {families.map((family) => (
+                        <SelectItem key={family.id} value={family.id}>
+                          {family.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
