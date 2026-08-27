@@ -259,6 +259,15 @@ export type Product = {
   brand_id: string | null;
   /** Same idea as brand_id, for stores using structured Collections. */
   collection_id: string | null;
+  /** Optional link to a product_families row — null (the default, and every
+   * product before this field existed) means this product is fully
+   * standalone, exactly as it's always behaved. When set, the storefront
+   * groups this product with its family siblings and Google Merchant sync
+   * uses the family as item_group_id instead of this product's own id. This
+   * product's own price/SKU/slug/images/everything else stays completely
+   * independent either way — family_id only adds grouping, never merges
+   * data between rows. */
+  family_id: string | null;
   /** Public-facing manufacturer reference (e.g. a watch reference number) —
    * distinct from sku, which is internal-only and never shown to customers. */
   reference_number: string | null;
@@ -276,6 +285,31 @@ export type Product = {
   google_sync_status: GoogleSyncStatus;
   google_product_id: string | null;
   google_sync_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * A lightweight grouping wrapper over otherwise fully independent products
+ * (e.g. "20ft Standard Container" grouping several separate Size/Condition/
+ * Colour products). Deliberately holds only shared, family-level display
+ * info — no price, stock, SKU, or anything that already exists correctly
+ * per-product on `products`. Assigning a product to a family (via
+ * products.family_id) never changes that product's own data; it only adds
+ * a grouping relationship for storefront display and Google Merchant's
+ * item_group_id.
+ */
+export type ProductFamily = {
+  id: string;
+  store_id: string;
+  category_id: string | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  short_description: string | null;
+  images: string[];
+  is_featured: boolean;
+  status: ProductStatus;
   created_at: string;
   updated_at: string;
 };

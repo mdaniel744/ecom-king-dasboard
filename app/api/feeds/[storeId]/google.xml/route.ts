@@ -92,7 +92,7 @@ export async function GET(
     <g:id>${escapeXml(p.id)}</g:id>
     <g:title>${cdata(text.name)}</g:title>
     <g:description>${cdata(text.description)}</g:description>
-    <g:item_group_id>${escapeXml(p.id)}</g:item_group_id>
+    <g:item_group_id>${escapeXml(p.family_id ?? p.id)}</g:item_group_id>
     <link>${escapeXml(link)}</link>
     <g:product_type>${productType ? cdata(productType) : ""}</g:product_type>
     ${p.google_product_category ? `<g:google_product_category>${cdata(p.google_product_category)}</g:google_product_category>` : "<g:google_product_category/>"}

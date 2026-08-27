@@ -302,6 +302,12 @@ function buildProductInput(
       additionalImageLinks: product.images.slice(1, 10),
       availability: product.status === "active" ? "IN_STOCK" : "OUT_OF_STOCK",
       condition: CONDITION_MAP[product.condition],
+      // Ungrouped (family_id null -- every product before this field
+      // existed, and every product not explicitly assigned to a family)
+      // keeps today's behavior: no itemGroupId, meaning Google treats it as
+      // its own group of one. Only products explicitly grouped into a
+      // family share a real itemGroupId with their siblings.
+      itemGroupId: product.family_id ?? undefined,
       price: {
         amountMicros: String(Math.round(applyVat(product.price!, feedLabel, store) * 1_000_000)),
         currencyCode: product.currency,
