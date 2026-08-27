@@ -29,6 +29,7 @@ import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
+import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
 import { generateImageAlt } from "./generate-alt-action";
@@ -63,6 +64,9 @@ export function ProductForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const [isFamilyMember, setIsFamilyMember] = useState(!!product?.family_id);
+  const [selectedFamilyId, setSelectedFamilyId] = useState(product?.family_id ?? "");
 
   const [name, setName] = useState(product?.name ?? "");
   const [slug, setSlug] = useState(product?.slug ?? "");
@@ -331,6 +335,66 @@ export function ProductForm({
               <CardTitle className="text-base">Basic Data</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-sm">Product Type</Label>
+                  <FieldInfo
+                    title="Product Type"
+                    description="Standalone: a normal, independent product — what most products should be. Part of a Family: this product is one size/colour/condition of a group of near-identical products (e.g. this specific '20ft, Used, Blue' container belongs to the '20ft Standard Container' family). Either way, this product keeps its own price, SKU, images, and its own real page — a family only adds a grouping relationship for the storefront's variant picker and Google Merchant's item grouping, it never merges data between products."
+                  />
+                </div>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="product_type_choice"
+                      checked={!isFamilyMember}
+                      onChange={() => {
+                        setIsFamilyMember(false);
+                        setSelectedFamilyId("");
+                      }}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    Standalone Product
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="product_type_choice"
+                      checked={isFamilyMember}
+                      onChange={() => setIsFamilyMember(true)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    Part of a Family
+                  </label>
+                </div>
+
+                {isFamilyMember && (
+                  <div className="flex items-center gap-2 pt-1">
+                    {families.length > 0 ? (
+                      <Select name="family_id" value={selectedFamilyId} onValueChange={setSelectedFamilyId}>
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Choose a family..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {families.map((family) => (
+                            <SelectItem key={family.id} value={family.id}>
+                              {family.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <>
+                        <input type="hidden" name="family_id" value="" />
+                        <p className="flex-1 text-sm text-muted-foreground">No families yet — create the first one.</p>
+                      </>
+                    )}
+                    <FamilyDialog categories={categories} storeSourceLocale={storeSourceLocale} onSuccess={() => router.refresh()} />
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -736,30 +800,6 @@ export function ProductForm({
                   </SelectContent>
                 </Select>
               </div>
-
-              {families.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="family_id">Product Family <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                    <FieldInfo
-                      title="Product Family"
-                      description="Only set this if this product is one of several near-identical products that are really the same item in different sizes/colours/conditions (e.g. this specific 'Used, Blue, 20ft' container belongs to the '20ft Standard Container' family). This never changes this product's own price, SKU, images, or anything else — it only groups it with its siblings for the storefront's variant picker and for Google Merchant's item grouping. Leave as None for a standalone product, which is what most products should be. Manage families from the Product Families page in the sidebar."
-                    />
-                  </div>
-                  <Select name="family_id" defaultValue={product?.family_id ?? ""}>
-                    <SelectTrigger id="family_id">
-                      <SelectValue placeholder="None — standalone product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {families.map((family) => (
-                        <SelectItem key={family.id} value={family.id}>
-                          {family.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">

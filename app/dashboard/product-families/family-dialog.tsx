@@ -32,10 +32,15 @@ export function FamilyDialog({
   categories,
   family,
   storeSourceLocale = "en",
+  onSuccess,
 }: {
   categories: Category[];
   family?: ProductFamily;
   storeSourceLocale?: string;
+  /** Called after a successful create/edit, e.g. so an embedding page (like
+   * the product form) can refresh its own family list to include the one
+   * just created, without a full page reload. */
+  onSuccess?: () => void;
 }) {
   const isEdit = !!family;
   const [open, setOpen] = useState(false);
@@ -79,6 +84,7 @@ export function FamilyDialog({
                 toast.success(isEdit ? "Family updated" : "Family created");
                 if (!isEdit) formRef.current?.reset();
                 setOpen(false);
+                onSuccess?.();
               } else {
                 setError(result.error);
                 toast.error(result.error);
