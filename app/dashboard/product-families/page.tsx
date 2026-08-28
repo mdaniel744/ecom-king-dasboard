@@ -8,6 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Wand2 } from "lucide-react";
+import Link from "next/link";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { DeleteFamilyButton } from "@/app/dashboard/product-families/delete-family-button";
 import type { Category, ProductFamily } from "@/lib/types";
@@ -86,6 +89,11 @@ export default async function ProductFamiliesPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <Button asChild variant="ghost" size="icon" title="Generate Variants">
+                      <Link href={`/dashboard/product-families/${family.id}/generate`}>
+                        <Wand2 className="h-4 w-4" />
+                      </Link>
+                    </Button>
                     <FamilyDialog
                       categories={categoryList}
                       family={family}
