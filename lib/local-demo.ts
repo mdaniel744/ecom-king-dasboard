@@ -509,6 +509,8 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
   private filters: Array<(row: Record<string, unknown>) => boolean> = [];
   private orderBy: { column: string; ascending: boolean } | null = null;
   private rowLimit: number | null = null;
+  private rowRange: { from: number; to: number } | null = null;
+  private upsertConflictColumns = ["id"];
 
   constructor(private readonly table: string) {}
 
@@ -543,6 +545,11 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
     return this;
   }
 
+  range(from: number, to: number) {
+    this.rowRange = { from, to };
+    return this;
+  }
+
   insert(payload: unknown) {
     this.mutation = "insert";
     this.payload = payload;
@@ -555,9 +562,11 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
     return this;
   }
 
-  upsert(payload: unknown) {
+  upsert(payload: unknown, options?: { onConflict?: string }) {
     this.mutation = "upsert";
     this.payload = payload;
+    this.upsertConflictColumns =
+      options?.onConflict?.split(",").map((column) => column.trim()).filter(Boolean) ?? ["id"];
     return this;
   }
 
@@ -588,7 +597,7 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
       return { data: null, error: null };
     }
 
-    if (this.mutation === "insert" || this.mutation === "upsert") {
+    if (this.mutation === "insert") {
       const payloads = (Array.isArray(this.payload) ? this.payload : [this.payload]).filter(
         (value): value is Record<string, unknown> => Boolean(value && typeof value === "object")
       );
@@ -601,6 +610,34 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
       }));
       tableRows.push(...createdRows);
       return { data: this.singular ? createdRows[0] ?? null : createdRows, error: null };
+    }
+
+    if (this.mutation === "upsert") {
+      const payloads = (Array.isArray(this.payload) ? this.payload : [this.payload]).filter(
+        (value): value is Record<string, unknown> => Boolean(value && typeof value === "object")
+      );
+      const changedRows = payloads.map((payload) => {
+        const existing = tableRows.find((row) =>
+          this.upsertConflictColumns.every(
+            (column) => payload[column] != null && row[column] === payload[column]
+          )
+        );
+        if (existing) {
+          Object.assign(existing, payload, { updated_at: new Date().toISOString() });
+          return existing;
+        }
+
+        const created = {
+          ...localDemoInsertDefaults(this.table),
+          id: randomUUID(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...payload,
+        };
+        tableRows.push(created);
+        return created;
+      });
+      return { data: this.singular ? changedRows[0] ?? null : changedRows, error: null };
     }
 
     if (this.mutation === "update") {
@@ -631,7 +668,8 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
       });
     }
 
-    if (this.rowLimit != null) rows = rows.slice(0, this.rowLimit);
+    if (this.rowRange) rows = rows.slice(this.rowRange.from, this.rowRange.to + 1);
+    else if (this.rowLimit != null) rows = rows.slice(0, this.rowLimit);
     return { data: this.singular ? rows[0] ?? null : rows, error: null };
   }
 

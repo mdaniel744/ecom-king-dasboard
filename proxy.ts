@@ -9,7 +9,9 @@ const publicRoutes = [
   // authenticates its request with its own shared webhook secret.
   "/api/inquiries/notify",
   "/api/orders/invoice",
-  ...(process.env.LOCAL_DEMO_MODE === "true" ? ["/dashboard(.*)"] : []),
+  ...(process.env.LOCAL_DEMO_MODE === "true"
+    ? ["/dashboard(.*)", "/api/products/export", "/api/products/import"]
+    : []),
 ];
 
 const isPublicRoute = createRouteMatcher(publicRoutes);

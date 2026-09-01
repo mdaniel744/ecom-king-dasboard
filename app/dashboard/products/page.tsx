@@ -20,6 +20,7 @@ import { ReadinessBadge } from "@/app/dashboard/products/readiness-badge";
 import { GoogleStatusBadge } from "@/app/dashboard/products/google-status-badge";
 import { StoreReadinessBanner } from "@/app/dashboard/products/store-readiness-banner";
 import { AddProductMenu } from "@/app/dashboard/products/add-product-menu";
+import { ProductTransferMenu } from "@/app/dashboard/products/product-transfer-menu";
 import { checkProductForMerchant, checkStoreMerchantConfig } from "@/lib/merchant-rules";
 
 type CatalogEntry =
@@ -120,6 +121,7 @@ export default async function ProductsPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <BulkSyncButton disabled={storeIssues.length > 0} />
+          <ProductTransferMenu />
           <AddProductMenu />
         </div>
       </div>
