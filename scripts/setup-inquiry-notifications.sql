@@ -1,4 +1,6 @@
--- One-time setup: run this once in the Supabase SQL Editor to wire up
+-- Legacy inquiry-only setup. New installations should use
+-- setup-submission-notifications.sql so all three storefront paths are covered.
+-- Run this once in the Supabase SQL Editor to wire up
 -- automatic inquiry notification emails. After this, every new row inserted
 -- into `inquiries` (by any storefront, for any store) triggers a call to
 -- /api/inquiries/notify, which emails that store's own notification_email
@@ -15,10 +17,10 @@ language plpgsql
 as $$
 begin
   perform net.http_post(
-    url := 'https://mycontainergmbh.com/api/inquiries/notify',
+    url := 'https://YOUR-DASHBOARD-DOMAIN.example/api/inquiries/notify',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-webhook-secret', 'a6a9640461b3f450246d3340a1f7c0e6470538d3676c589c44fdab6716979dc3'
+      'x-webhook-secret', 'REPLACE_WITH_INQUIRY_WEBHOOK_SECRET'
     ),
     body := jsonb_build_object('id', NEW.id)
   );

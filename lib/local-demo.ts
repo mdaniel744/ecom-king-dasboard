@@ -40,6 +40,9 @@ export const localDemoStore: Store = {
   vat_rates: {},
   notification_email: null,
   notification_sender_name: null,
+  notify_inquiries: true,
+  notify_checkout_orders: true,
+  notify_escrow_orders: true,
   created_at: now,
   updated_at: now,
 };

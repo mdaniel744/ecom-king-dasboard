@@ -52,12 +52,19 @@ export type Store = {
    * default, since the correct rate genuinely varies by destination country
    * and nobody should get a silently-wrong price the moment this shipped. */
   vat_rates: Record<string, number>;
-  /** Where new-inquiry notification emails are sent. Null until the store owner sets it in Settings. */
+  /** Where new inquiry, standard-order, and protected-order staff alerts are
+   * sent. Null until the store owner sets it in Settings. */
   notification_email: string | null;
   /** Branded "From" display name for outbound emails (e.g. "Kariv Glamour").
    * Falls back to `name` when unset — every store gets a branded sender,
    * not the generic platform name, without needing to fill this in. */
   notification_sender_name: string | null;
+  /** Admin email preferences for the three distinct storefront submission
+   * paths. The destination tables remain separate regardless of whether an
+   * email is enabled. */
+  notify_inquiries: boolean;
+  notify_checkout_orders: boolean;
+  notify_escrow_orders: boolean;
   created_at: string;
   updated_at: string;
 };

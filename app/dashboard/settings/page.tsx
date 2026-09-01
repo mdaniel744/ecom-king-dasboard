@@ -18,9 +18,25 @@ export default async function SettingsPage() {
         Store profile, notifications, and team access
       </p>
 
+      <nav aria-label="Settings sections" className="mt-4 flex flex-wrap gap-2">
+        {[
+          ["Store profile", "#store-profile"],
+          ["Email notifications", "#email-notifications"],
+          ["Team access", "#team-access"],
+        ].map(([label, href]) => (
+          <a
+            key={href}
+            href={href}
+            className="rounded-md border bg-card px-3 py-1.5 text-sm font-medium transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
       <SettingsForm store={store} />
 
-      <div className="mt-6 max-w-xl">
+      <div id="team-access" className="mt-6 max-w-3xl scroll-mt-6">
         <TeamSection
           members={members}
           isCurrentUserOwner={userId === store.owner_user_id}

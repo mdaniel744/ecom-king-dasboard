@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition, useEffect, useRef } from "react";
+import { MessageSquareText, ShieldCheck, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -204,11 +206,11 @@ export function SettingsForm({
   }
 
   return (
-    <form action={handleSubmit} className="mt-6 max-w-xl space-y-6">
+    <form action={handleSubmit} className="mt-6 max-w-3xl space-y-6">
       <ActionErrorBanner message={error} />
 
       {section === "general" && (
-        <Card>
+        <Card id="store-profile" className="scroll-mt-6">
           <CardHeader>
             <CardTitle className="text-base">Store Profile</CardTitle>
         </CardHeader>
@@ -514,48 +516,118 @@ export function SettingsForm({
       {section === "delivery-markets" && <TestLinksCard store={store} />}
 
       {section === "general" && (
-      <Card>
+      <Card id="email-notifications" className="scroll-mt-6">
         <CardHeader>
           <CardTitle className="text-base">Email Notifications</CardTitle>
           <p className="text-sm text-muted-foreground">
-            When a customer submits an inquiry on your storefront, we&apos;ll email it here
-            automatically.
+            Receive staff alerts for each storefront submission type while keeping inquiries,
+            normal orders, and protected orders in their correct dashboard sections.
           </p>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="notification_email">Notification Email</Label>
-              <FieldInfo
-                title="Notification Email"
-                description="The email address that receives a message every time a customer submits an inquiry through your storefront. Leave blank to turn off email notifications — inquiries will still appear in the Inquiries page either way."
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="notification_email">Notification Email</Label>
+                <FieldInfo
+                  title="Notification Email"
+                  description="The staff inbox that receives new-submission alerts. Leave blank to turn off email alerts. Customer submissions still appear in the correct dashboard section even when email is disabled."
+                />
+              </div>
+              <Input
+                id="notification_email"
+                name="notification_email"
+                type="email"
+                placeholder="e.g. orders@yourbusiness.com"
+                defaultValue={store.notification_email ?? ""}
               />
             </div>
-            <Input
-              id="notification_email"
-              name="notification_email"
-              type="email"
-              placeholder="e.g. you@yourbusiness.com"
-              defaultValue={store.notification_email ?? ""}
-            />
+
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="notification_sender_name">Email Sender Name</Label>
+                <FieldInfo
+                  title="Email Sender Name"
+                  description={
+                    'The name customers and staff see as the sender on emails from your store (e.g. "Kariv Glamour" instead of a generic platform name). Leave blank to use your Store Name.'
+                  }
+                />
+              </div>
+              <Input
+                id="notification_sender_name"
+                name="notification_sender_name"
+                placeholder={store.name || "e.g. Kariv Glamour"}
+                defaultValue={store.notification_sender_name ?? ""}
+              />
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="notification_sender_name">Email Sender Name</Label>
-              <FieldInfo
-                title="Email Sender Name"
-                description={
-                  'The name customers and staff see as the sender on emails from your store (e.g. "Kariv Glamour" instead of a generic platform name). Leave blank to just use your Store Name above — only fill this in if you want something different, like a shorter or more customer-facing version.'
-                }
-              />
+          <div>
+            <div className="mb-3">
+              <p className="text-sm font-semibold">Storefront submission routing</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                These routes are fixed. The checkboxes control staff email alerts only; they never
+                move or hide customer submissions.
+              </p>
             </div>
-            <Input
-              id="notification_sender_name"
-              name="notification_sender_name"
-              placeholder={store.name || "e.g. Kariv Glamour"}
-              defaultValue={store.notification_sender_name ?? ""}
-            />
+
+            <div className="grid gap-3 lg:grid-cols-3">
+              {[
+                {
+                  name: "notify_inquiries",
+                  enabled: store.notify_inquiries,
+                  icon: MessageSquareText,
+                  source: "Inquiry / request a quote",
+                  detail: "Product questions, price requests, and configurable quote forms.",
+                  destination: "Inquiries",
+                  href: "/dashboard/inquiries",
+                },
+                {
+                  name: "notify_checkout_orders",
+                  enabled: store.notify_checkout_orders,
+                  icon: ShoppingCart,
+                  source: "Buy Now / cart checkout",
+                  detail: "Standard purchases after customer, delivery, and payment details.",
+                  destination: "Orders",
+                  href: "/dashboard/store-orders",
+                },
+                {
+                  name: "notify_escrow_orders",
+                  enabled: store.notify_escrow_orders,
+                  icon: ShieldCheck,
+                  source: "Buy with Protection",
+                  detail: "Authenticated purchases using customer protection or escrow.",
+                  destination: "Escrow Orders",
+                  href: "/dashboard/orders",
+                },
+              ].map(({ name, enabled, icon: Icon, source, detail, destination, href }) => (
+                <div key={name} className="flex flex-col rounded-lg border bg-muted/20 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium">{source}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-3 border-t pt-3">
+                    <Link href={href} className="text-xs font-medium text-primary hover:underline">
+                      → {destination}
+                    </Link>
+                    <label className="flex items-center gap-2 text-xs font-medium">
+                      <input
+                        type="checkbox"
+                        name={name}
+                        defaultChecked={enabled}
+                        className="h-4 w-4 rounded border-border accent-primary"
+                      />
+                      Email me
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>

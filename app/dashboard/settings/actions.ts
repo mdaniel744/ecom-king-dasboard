@@ -15,6 +15,9 @@ const settingsSchema = z.object({
     z.string().trim().max(255).email().nullable()
   ),
   notificationSenderName: z.string().trim().max(100).nullable(),
+  notifyInquiries: z.boolean(),
+  notifyCheckoutOrders: z.boolean(),
+  notifyEscrowOrders: z.boolean(),
 });
 
 export async function updateStoreSettings(formData: FormData): Promise<ActionResult> {
@@ -31,11 +34,17 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
       domain,
       notificationEmail,
       notificationSenderName,
+      notifyInquiries,
+      notifyCheckoutOrders,
+      notifyEscrowOrders,
     } = validate(settingsSchema, {
       name: nameRaw,
       domain: domainCleaned,
       notificationEmail: notificationEmailRaw,
       notificationSenderName: notificationSenderNameRaw,
+      notifyInquiries: formData.has("notify_inquiries"),
+      notifyCheckoutOrders: formData.has("notify_checkout_orders"),
+      notifyEscrowOrders: formData.has("notify_escrow_orders"),
     });
     const { error } = await supabaseAdmin
       .from("stores")
@@ -44,6 +53,9 @@ export async function updateStoreSettings(formData: FormData): Promise<ActionRes
         domain,
         notification_email: notificationEmail,
         notification_sender_name: notificationSenderName,
+        notify_inquiries: notifyInquiries,
+        notify_checkout_orders: notifyCheckoutOrders,
+        notify_escrow_orders: notifyEscrowOrders,
       })
       .eq("id", store.id);
 
