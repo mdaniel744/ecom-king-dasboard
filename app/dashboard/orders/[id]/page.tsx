@@ -47,6 +47,19 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   ];
   const buyers = await getKarivUsersByIds(clerkIdsToResolve);
   const buyer = buyers.get(typedOrder.buyer_user_id);
+  const senderNames = Object.fromEntries(buyers.entries());
+  if (typedOrder.buyer_name) {
+    senderNames[typedOrder.buyer_user_id] = {
+      name: typedOrder.buyer_name,
+      email: typedOrder.buyer_email ?? null,
+    };
+  }
+  if (typedOrder.dealer_user_id && typedOrder.dealer_name) {
+    senderNames[typedOrder.dealer_user_id] = {
+      name: typedOrder.dealer_name,
+      email: typedOrder.dealer_email ?? null,
+    };
+  }
   const stepIndex = escrowStepIndex(typedOrder.escrow_status);
   const item = typedOrder.products?.[0];
 
@@ -57,13 +70,17 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Back to Orders
+        Back to Escrow Orders
       </Link>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{buyer?.name ?? typedOrder.buyer_user_id}</h1>
-          <p className="text-sm text-muted-foreground">{buyer?.email ?? "—"}</p>
+          <h1 className="text-2xl font-semibold">
+            {typedOrder.buyer_name ?? buyer?.name ?? typedOrder.buyer_user_id}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {typedOrder.buyer_email ?? buyer?.email ?? "—"}
+          </p>
           <p className="font-mono text-xs text-muted-foreground">{orderRef(typedOrder.id)}</p>
         </div>
         <Badge className={STATUS_CLASS[typedOrder.escrow_status]}>{STATUS_LABEL[typedOrder.escrow_status]}</Badge>
@@ -131,7 +148,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <OrderEscrowPanel
           order={typedOrder}
           messages={typedMessages}
-          senderNames={Object.fromEntries(buyers.entries())}
+          senderNames={senderNames}
         />
       </div>
     </div>

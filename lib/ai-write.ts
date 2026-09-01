@@ -20,6 +20,8 @@ const SEO_GUIDE: Record<string, string> = {
   description: "Output a product page description. 150–300 words. Natural prose paragraphs — no bullet points. Weave in search keywords the way a customer would actually type them. Cover what the product is, what it is used for, and why it is a good choice. Google-crawlable structure.",
   meta_title: "Output a page title tag. Maximum 60 characters. Put the primary keyword early. Descriptive and specific. No clickbait.",
   meta_description: "Output a meta description. 140–155 characters exactly. Include the primary keyword, summarise the page content, end with a gentle call to action.",
+  google_title: "Output a Google Shopping product title. Maximum 150 characters. Put the product type first, then the most important accurate attributes such as brand, size, colour, material, or condition. No promotional language or keyword stuffing.",
+  google_description: "Output a factual Google Shopping product description under 5,000 characters. Explain the product, important attributes, materials, dimensions, and use cases. No promotions, shipping claims, links, or keyword stuffing.",
   label: "Output a product attribute display label. 2–6 words. Short, clear, customer-friendly. Capitalise correctly for the target language.",
   category_description: "Output a category landing page description. 100–200 words. Natural language. Describe what kind of products are in this category and who they are for. Include relevant search terms naturally.",
 };

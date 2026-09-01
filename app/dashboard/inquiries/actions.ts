@@ -9,6 +9,7 @@ import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import type { InquiryStatus } from "@/lib/types";
 
 const inquiryStatusSchema = z.enum(["open", "closed"]);
+const inquiryNotesSchema = z.string().trim().max(5000, "Notes are too long");
 
 export async function setInquiryStatus(inquiryId: string, status: InquiryStatus): Promise<ActionResult> {
   try {
@@ -25,6 +26,32 @@ export async function setInquiryStatus(inquiryId: string, status: InquiryStatus)
     if (error) throw error;
 
     revalidatePath("/dashboard/inquiries");
+    revalidatePath(`/dashboard/inquiries/${inquiryId}`);
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+export async function updateInquiryAdminNotes(
+  inquiryId: string,
+  adminNotes: string
+): Promise<ActionResult> {
+  try {
+    inquiryId = validateId(inquiryId);
+    const notes = validate(inquiryNotesSchema, adminNotes);
+    const store = await getCurrentStore();
+
+    const { error } = await supabaseAdmin
+      .from("inquiries")
+      .update({ admin_notes: notes || null })
+      .eq("id", inquiryId)
+      .eq("store_id", store.id);
+
+    if (error) throw error;
+
+    revalidatePath("/dashboard/inquiries");
+    revalidatePath(`/dashboard/inquiries/${inquiryId}`);
     return ok();
   } catch (err) {
     return toActionResult(err);

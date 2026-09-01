@@ -1,14 +1,18 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const isPublicRoute = createRouteMatcher([
+const publicRoutes = [
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/feeds(.*)",
-  // Called by the Postgres trigger (pg_net), not a signed-in user — it
-  // authenticates itself via INQUIRY_WEBHOOK_SECRET instead of Clerk.
+  // Called by Postgres triggers (pg_net), not signed-in users. Each endpoint
+  // authenticates its request with its own shared webhook secret.
   "/api/inquiries/notify",
-]);
+  "/api/orders/invoice",
+  ...(process.env.LOCAL_DEMO_MODE === "true" ? ["/dashboard(.*)"] : []),
+];
+
+const isPublicRoute = createRouteMatcher(publicRoutes);
 
 export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {

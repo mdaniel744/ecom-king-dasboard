@@ -15,7 +15,7 @@ export default async function SettingsPage() {
     <div>
       <h1 className="text-2xl font-semibold">Settings</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Store profile and integrations
+        Store profile, notifications, and team access
       </p>
 
       <SettingsForm store={store} />

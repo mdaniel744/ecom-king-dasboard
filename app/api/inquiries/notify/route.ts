@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mycontainergmbh.com";
-  const dashboardUrl = `${appUrl.replace(/\/$/, "")}/dashboard/inquiries`;
+  const dashboardUrl = `${appUrl.replace(/\/$/, "")}/dashboard/inquiries/${inquiry.id}`;
 
   try {
     await sendMail({

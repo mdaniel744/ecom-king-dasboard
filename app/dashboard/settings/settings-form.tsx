@@ -14,7 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
-import { updateStoreSettings, testProductLinks } from "@/app/dashboard/settings/actions";
+import { updateStoreSettings } from "@/app/dashboard/settings/actions";
+import {
+  testProductLinks,
+  updateDeliveryMarketSettings,
+  updateGoogleMerchantSettings,
+} from "@/app/dashboard/market/actions";
 import { CONTENT_LANGUAGE_OPTIONS, FEED_LABEL_OPTIONS } from "@/lib/merchant-locales";
 import { FieldInfo } from "@/components/ui/field-info";
 import type { Store } from "@/lib/types";
@@ -97,7 +102,19 @@ function parseProductUrlWord(rawUrl: string, store: Store): ParsedProductUrl | {
   };
 }
 
-export function SettingsForm({ store }: { store: Store }) {
+export type SettingsSection =
+  | "general"
+  | "google-merchant-center"
+  | "delivery-markets"
+  | "xml-feed-urls";
+
+export function SettingsForm({
+  store,
+  section = "general",
+}: {
+  store: Store;
+  section?: SettingsSection;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [enabledLocales, setEnabledLocales] = useState<string[]>(store.enabled_locales ?? []);
@@ -156,9 +173,21 @@ export function SettingsForm({ store }: { store: Store }) {
   function handleSubmit(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      const result = await updateStoreSettings(formData);
+      const result = await (
+        section === "google-merchant-center"
+          ? updateGoogleMerchantSettings
+          : section === "delivery-markets"
+            ? updateDeliveryMarketSettings
+            : updateStoreSettings
+      )(formData);
       if (result.success) {
-        toast.success("Settings saved");
+        toast.success(
+          section === "google-merchant-center"
+            ? "Google Merchant Center settings saved"
+            : section === "delivery-markets"
+              ? "Delivery markets saved"
+              : "Settings saved"
+        );
       } else {
         setError(result.error);
         toast.error(result.error);
@@ -166,13 +195,22 @@ export function SettingsForm({ store }: { store: Store }) {
     });
   }
 
+  if (section === "xml-feed-urls") {
+    return (
+      <div className="mt-6 max-w-xl">
+        <FeedUrlCard store={store} />
+      </div>
+    );
+  }
+
   return (
     <form action={handleSubmit} className="mt-6 max-w-xl space-y-6">
       <ActionErrorBanner message={error} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Store Profile</CardTitle>
+      {section === "general" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Store Profile</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
@@ -201,8 +239,10 @@ export function SettingsForm({ store }: { store: Store }) {
             />
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      )}
 
+      {section === "google-merchant-center" && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Google Merchant Center</CardTitle>
@@ -275,7 +315,9 @@ export function SettingsForm({ store }: { store: Store }) {
           </p>
         </CardContent>
       </Card>
+      )}
 
+      {section === "delivery-markets" && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Delivery Markets</CardTitle>
@@ -467,9 +509,11 @@ export function SettingsForm({ store }: { store: Store }) {
           </div>
         </CardContent>
       </Card>
+      )}
 
-      <TestLinksCard store={store} />
+      {section === "delivery-markets" && <TestLinksCard store={store} />}
 
+      {section === "general" && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Email Notifications</CardTitle>
@@ -515,9 +559,9 @@ export function SettingsForm({ store }: { store: Store }) {
           </div>
         </CardContent>
       </Card>
+      )}
 
-      <FeedUrlCard store={store} />
-
+      {section === "google-merchant-center" && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Translation</CardTitle>
@@ -550,7 +594,9 @@ export function SettingsForm({ store }: { store: Store }) {
           </div>
         </CardContent>
       </Card>
+      )}
 
+      {section === "google-merchant-center" && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Push to Google</CardTitle>
@@ -589,9 +635,16 @@ export function SettingsForm({ store }: { store: Store }) {
           )}
         </CardContent>
       </Card>
+      )}
 
       <Button type="submit" disabled={isPending}>
-        {isPending ? "Saving..." : "Save"}
+        {isPending
+          ? "Saving..."
+          : section === "google-merchant-center"
+            ? "Save Google Merchant Settings"
+            : section === "delivery-markets"
+              ? "Save Delivery Markets"
+              : "Save Settings"}
       </Button>
     </form>
   );
@@ -626,7 +679,7 @@ function FeedUrlCard({ store }: { store: Store }) {
   }
 
   return (
-    <Card>
+    <Card id="xml-feed-urls" className="scroll-mt-6">
       <CardHeader>
         <CardTitle className="text-base">XML Feed URLs</CardTitle>
         <p className="text-sm text-muted-foreground">

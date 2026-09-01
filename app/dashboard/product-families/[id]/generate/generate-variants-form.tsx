@@ -57,7 +57,7 @@ export function GenerateVariantsForm({
             ? `Created ${created} new variant${created === 1 ? "" : "s"} (${skipped} combination${skipped === 1 ? "" : "s"} already existed, skipped).`
             : `Created ${created} new variant${created === 1 ? "" : "s"} as drafts.`
         );
-        router.push("/dashboard/products");
+        router.push(`/dashboard/product-families/${family.id}`);
       } else {
         setError(result.error);
         toast.error(result.error);
@@ -74,7 +74,7 @@ export function GenerateVariantsForm({
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-semibold">Generate Variants</h1>
+          <h1 className="text-2xl font-semibold">Generate Product Variations</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             For the <strong>{family.name}</strong> family — pick which attributes vary and which
             values to include; one product gets created per combination.
@@ -140,13 +140,15 @@ export function GenerateVariantsForm({
                   : `This will create ${comboCount} product${comboCount === 1 ? "" : "s"}.`}
               </Label>
               <p className="text-xs text-muted-foreground">
-                Created as drafts — price, images, and description are left for you to fill in per
-                product afterward. Combinations that already exist in this family are skipped, not
-                duplicated.
+                Created as independent drafts. The family page will list every generated product
+                with a View / Edit button so you can complete its normal product form. Existing
+                combinations are skipped, not duplicated.
               </p>
             </div>
             <Button type="submit" disabled={isPending || comboCount === 0}>
-              {isPending ? "Generating..." : `Generate ${comboCount || ""} Variant${comboCount === 1 ? "" : "s"}`}
+              {isPending
+                ? "Generating..."
+                : `Generate ${comboCount || ""} Product Variation${comboCount === 1 ? "" : "s"}`}
             </Button>
           </div>
         )}

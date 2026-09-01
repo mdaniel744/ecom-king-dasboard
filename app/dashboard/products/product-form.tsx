@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
-import { Plus, X, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Plus, ShoppingCart, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +21,6 @@ import { FieldError } from "@/components/dashboard/field-error";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
-import { ImageUploadInput } from "@/components/dashboard/image-upload-input";
 import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
 import { FieldInfo } from "@/components/ui/field-info";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
@@ -32,10 +31,10 @@ import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
-import { generateImageAlt } from "./generate-alt-action";
-import { uploadDashboardImage } from "@/app/dashboard/upload-image-action";
+import { ProductMediaManager } from "./product-media-manager";
 import { stripHtml } from "@/lib/html";
 import { slugify } from "@/lib/slug";
+import { cn } from "@/lib/utils";
 
 type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
@@ -47,6 +46,9 @@ type Props = {
   attributeDefs: AttributeDef[];
   storeSourceLocale?: string;
   enabledLocales?: string[];
+  backHref?: string;
+  successHref?: string;
+  heading?: string;
 };
 
 export function ProductForm({
@@ -59,6 +61,9 @@ export function ProductForm({
   attributeDefs,
   storeSourceLocale = "en",
   enabledLocales = [],
+  backHref = "/dashboard/products",
+  successHref,
+  heading,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -73,12 +78,16 @@ export function ProductForm({
   const [slugLocked, setSlugLocked] = useState(!!product?.slug);
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
+  const [metaTitle, setMetaTitle] = useState(product?.meta_title ?? "");
+  const [metaDescription, setMetaDescription] = useState(product?.meta_description ?? "");
   const [brand, setBrand] = useState(product?.brand ?? "");
   const [selectedBrandId, setSelectedBrandId] = useState(product?.brand_id ?? "");
   const [selectedCollectionId, setSelectedCollectionId] = useState(product?.collection_id ?? "");
   const [mpn, setMpn] = useState(product?.mpn ?? "");
   const [isGeneratingMpn, setIsGeneratingMpn] = useState(false);
   const [googleProductCategory, setGoogleProductCategory] = useState(product?.google_product_category ?? "");
+  const [googleTitle, setGoogleTitle] = useState(product?.google_title ?? "");
+  const [googleDescription, setGoogleDescription] = useState(product?.google_description ?? "");
   const [isSuggestingCategory, setIsSuggestingCategory] = useState(false);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState(product?.category_id ?? "");
@@ -88,29 +97,14 @@ export function ProductForm({
     initialAttrs.length ? initialAttrs : [["", ""]]
   );
 
-  // images and image_alts used to be two separate parallel arrays kept "in
-  // sync" by every handler updating both at once — that's exactly what let
-  // them drift apart under a race (see handleAddImages). One array of
-  // {url, alt} pairs makes that class of bug structurally impossible: there
-  // is only ever one state to update, so there's nothing left to get out
-  // of sync.
-  type ImageSlot = { url: string; alt: string };
-  const [imageSlots, setImageSlots] = useState<ImageSlot[]>(() =>
-    product?.images?.length
-      ? product.images.map((url, i) => ({ url, alt: product.image_alts?.[i] ?? "" }))
-      : [{ url: "", alt: "" }]
-  );
-  const [generatingAltIndex, setGeneratingAltIndex] = useState<number | null>(null);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
-
   function handleSubmit(formData: FormData) {
     setError(null);
     setFieldErrors({});
 
     const statusVal = formData.get("status") as string;
+    const returnFamilyId = (formData.get("family_id") as string)?.trim();
     const priceVal = (formData.get("price") as string)?.trim();
-    const filledImages = imageSlots.filter((s) => s.url.trim());
+    const filledImages = (formData.getAll("images") as string[]).filter((url) => url.trim());
 
     if (!name.trim()) {
       toast.error("Product title is required — it's how Google and your customers identify this product. Add a name before saving.");
@@ -135,7 +129,12 @@ export function ProductForm({
       const result = await action(formData);
       if (result.success) {
         toast.success(product ? "Product updated" : "Product created");
-        router.push("/dashboard/products");
+        router.push(
+          successHref ||
+            (returnFamilyId
+              ? `/dashboard/product-families/${returnFamilyId}`
+              : "/dashboard/products")
+        );
       } else {
         setError(result.error);
         setFieldErrors(result.fieldErrors);
@@ -156,95 +155,6 @@ export function ProductForm({
       .filter(Boolean)
       .map((p) => `<p>${escape(p)}</p>`)
       .join("");
-  }
-
-  function updateImage(index: number, newValue: string) {
-    setImageSlots((prev) => prev.map((s, i) => (i === index ? { ...s, url: newValue } : s)));
-  }
-
-  function updateImageAlt(index: number, newValue: string) {
-    setImageSlots((prev) => prev.map((s, i) => (i === index ? { ...s, alt: newValue } : s)));
-  }
-
-  function removeImageSlot(index: number) {
-    setImageSlots((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  async function handleGenerateAlt(index: number) {
-    if (!name.trim()) {
-      toast.error("Fill in the product title first so the AI has something to work with.");
-      return;
-    }
-    setGeneratingAltIndex(index);
-    try {
-      const result = await generateImageAlt(name, description || null, brand || null, index);
-      if (result.alt) {
-        updateImageAlt(index, result.alt);
-        toast.success("Alt text generated — review and save.");
-      } else {
-        toast.error(result.error ?? "Could not generate alt text.");
-      }
-    } catch {
-      toast.error("Alt text generation failed — please try again.");
-    } finally {
-      setGeneratingAltIndex(null);
-    }
-  }
-
-  async function handleAddImages(fileList: FileList) {
-    const files = Array.from(fileList).slice(0, 20);
-    if (files.length === 0) return;
-
-    setIsBulkUploading(true);
-    try {
-      const uploadedUrls: string[] = [];
-
-      for (const file of files) {
-        const formData = new FormData();
-        formData.set("file", file);
-        formData.set("folder", "products");
-        const result = await uploadDashboardImage(formData);
-        if (result.url) {
-          uploadedUrls.push(result.url);
-        } else {
-          toast.error(result.error ?? `Failed to upload ${file.name}`);
-        }
-      }
-      if (uploadedUrls.length === 0) return;
-
-      // Functional update reading the LATEST slots, not a snapshot taken
-      // before the (multi-second) upload loop above — this is what used to
-      // silently undo anything the user did mid-upload (remove a photo,
-      // swap one, edit an alt) whenever this write landed after theirs.
-      setImageSlots((prev) => [
-        ...prev.filter((s) => s.url.trim()),
-        ...uploadedUrls.map((url) => ({ url, alt: "" })),
-      ]);
-      toast.success(`${uploadedUrls.length} image${uploadedUrls.length > 1 ? "s" : ""} uploaded`);
-
-      // Auto-fill alt text for each new image so bulk uploads don't leave a
-      // pile of manual "Generate" clicks behind — still fully editable after,
-      // and the per-image button below still works to redo any of these.
-      // Matched back to its slot by URL (always unique — fresh UUID per
-      // upload) rather than by array position, so this can't write into the
-      // wrong slot even if the array changed shape in the meantime.
-      if (name.trim()) {
-        await Promise.all(
-          uploadedUrls.map(async (url, i) => {
-            try {
-              const result = await generateImageAlt(name, description || null, brand || null, i);
-              if (result.alt) {
-                setImageSlots((prev) => prev.map((s) => (s.url === url ? { ...s, alt: result.alt! } : s)));
-              }
-            } catch {
-              // best-effort — leave blank, manual Generate button covers it
-            }
-          })
-        );
-      }
-    } finally {
-      setIsBulkUploading(false);
-    }
   }
 
   function updateAttr(index: number, field: 0 | 1, newValue: string) {
@@ -292,7 +202,7 @@ export function ProductForm({
     setIsSuggestingCategory(true);
     try {
       const categoryName = categories.find((c) => c.id === selectedCategoryId)?.name ?? null;
-      const result = await suggestGoogleCategory(name, description || null, null, categoryName);
+      const result = await suggestGoogleCategory(name, description || null, brand || null, categoryName);
       if (result.category) {
         setGoogleProductCategory(result.category);
         toast.success("Category suggested — review and adjust if needed.");
@@ -311,12 +221,12 @@ export function ProductForm({
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="ghost" size="icon" className="shrink-0">
-            <Link href="/dashboard/products">
+            <Link href={backHref} aria-label="Close product editor">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <h1 className="truncate text-2xl font-semibold">
-            {product ? "Edit Product" : "New Product"}
+            {heading || (product ? "Edit Product" : "New Product")}
           </h1>
         </div>
         <Button type="submit" disabled={isPending} className="shrink-0">
@@ -543,94 +453,6 @@ export function ProductForm({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-1.5">
-                <CardTitle className="text-base">Images</CardTitle>
-                <FieldInfo
-                  title="Product Images & Alt Text"
-                  description="Photos of your product. The first image is the main one sent to Google as the primary image. Click Add Images to select several photos at once straight from your device — alt text is written in automatically for each one. Alt text is the written description Google reads when crawling your site and is one of the strongest image SEO signals; review what's auto-filled and adjust anything that doesn't match the photo, or use Generate to redo a single one."
-                />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                First image is the main one. Add alt text to every image for Google image SEO.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {imageSlots.map((slot, i) => (
-                <div key={i} className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <input type="hidden" name="images" value={slot.url} />
-                    <ImageUploadInput
-                      value={slot.url}
-                      onChange={(newUrl) => updateImage(i, newUrl)}
-                      folder="products"
-                      emptyLabel={i === 0 ? "Choose Main Image" : "Choose Image"}
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeImageSlot(i)}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex gap-2 items-start">
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">Alt text</span>
-                        <FieldInfo
-                          title="Image Alt Text"
-                          description="A short written description of what this image shows — Google reads it when crawling your site and uses it to rank your images in search. Write what's visible: the product name, key features, colour, and angle. E.g. 'Anthrazit grey 20ft High Cube shipping container, front view'. Avoid generic text like 'product image'. The Generate button writes this for you using your product title, description, brand, and whether this is the main or an additional image — the more complete those fields are, the more accurate the result. Since the AI cannot see the actual photo, always review what it writes and adjust to match what the image actually shows. Use Generate on every image."
-                        />
-                      </div>
-                      <Input
-                        name="image_alts"
-                        value={slot.alt}
-                        onChange={(e) => updateImageAlt(i, e.target.value)}
-                        placeholder={i === 0 ? "e.g. Anthrazit grey 20ft container, front view" : "e.g. Container interior, side door open"}
-                        className="text-sm"
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleGenerateAlt(i)}
-                      disabled={generatingAltIndex === i}
-                      className="mt-5 h-8 gap-1.5 text-xs shrink-0"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      {generatingAltIndex === i ? "Generating..." : "Generate"}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              <input
-                ref={multiFileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) {
-                    handleAddImages(e.target.files);
-                  }
-                  e.target.value = "";
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isBulkUploading}
-                onClick={() => multiFileInputRef.current?.click()}
-              >
-                {isBulkUploading ? (
-                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                )}
-                {isBulkUploading ? "Uploading..." : "Add Images"}
-              </Button>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="space-y-4">
@@ -801,6 +623,81 @@ export function ProductForm({
                 </Select>
               </div>
 
+              <div className="space-y-4 rounded-lg border bg-muted/20 p-3">
+                <div>
+                  <p className="text-sm font-medium">Brand &amp; Collection</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Group this product under its brand and a related collection.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="brand_id">Brand <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                    <FieldInfo
+                      title="Product Brand"
+                      description="Choose a structured brand for dashboard organization. Selecting one also fills the Google Merchant Brand field, and makes that brand's collections available below."
+                    />
+                  </div>
+                  <Select
+                    name="brand_id"
+                    value={selectedBrandId}
+                    onValueChange={(value) => {
+                      setSelectedBrandId(value);
+                      setSelectedCollectionId("");
+                      const match = brands.find((entry) => entry.id === value);
+                      if (match) setBrand(match.name);
+                    }}
+                  >
+                    <SelectTrigger id="brand_id">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {brands.length > 0 ? (
+                        brands.map((entry) => (
+                          <SelectItem key={entry.id} value={entry.id}>
+                            {entry.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-brands-available" disabled>
+                          No brands created yet
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="collection_id">Collection <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                  <Select
+                    name="collection_id"
+                    value={selectedCollectionId}
+                    onValueChange={setSelectedCollectionId}
+                    disabled={!selectedBrandId}
+                  >
+                    <SelectTrigger id="collection_id">
+                      <SelectValue placeholder={selectedBrandId ? "None" : "Select a brand first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {collections.filter((collection) => collection.brand_id === selectedBrandId).length > 0 ? (
+                        collections
+                          .filter((collection) => collection.brand_id === selectedBrandId)
+                          .map((collection) => (
+                          <SelectItem key={collection.id} value={collection.id}>
+                            {collection.name}
+                          </SelectItem>
+                          ))
+                      ) : (
+                        <SelectItem value="no-collections-available" disabled>
+                          {selectedBrandId ? "No collections for this brand" : "Select a brand first"}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="stock_quantity">Stock Quantity <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
@@ -844,72 +741,28 @@ export function ProductForm({
             </CardContent>
           </Card>
 
-          {brands.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Brand &amp; Collection</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Selecting a brand also fills in the Brand field below for Google.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="brand_id">Brand</Label>
-                  <Select
-                    name="brand_id"
-                    value={selectedBrandId}
-                    onValueChange={(value) => {
-                      setSelectedBrandId(value);
-                      setSelectedCollectionId("");
-                      const match = brands.find((b) => b.id === value);
-                      if (match) setBrand(match.name);
-                    }}
-                  >
-                    <SelectTrigger id="brand_id">
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {brands.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>
-                          {b.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+          <Card className="overflow-hidden">
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center gap-3 px-6 py-5 text-left [&::-webkit-details-marker]:hidden">
+                <span className="rounded-lg bg-primary/10 p-2 text-primary">
+                  <ShoppingCart className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">Google Merchant</span>
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                    Product data is used automatically · open for identifiers and optional overrides
+                  </span>
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+
+              <CardContent className="space-y-4 border-t pt-5">
+                <div className="rounded-lg border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
+                  Google Merchant automatically receives this product&apos;s title, description, price,
+                  currency, images, availability, condition, Brand, Category, and family grouping.
+                  Use the fields below only for identifiers, taxonomy suggestions, or a deliberate
+                  Google-specific title or description.
                 </div>
-
-                {selectedBrandId && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="collection_id">Collection <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                    <Select
-                      name="collection_id"
-                      value={selectedCollectionId}
-                      onValueChange={setSelectedCollectionId}
-                    >
-                      <SelectTrigger id="collection_id">
-                        <SelectValue placeholder="None" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {collections
-                          .filter((c) => c.brand_id === selectedBrandId)
-                          .map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Google Merchant</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="brand">Brand <span className="text-xs font-normal text-muted-foreground">(optional, recommended for Google)</span></Label>
@@ -992,43 +845,173 @@ export function ProductForm({
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="google_title">Google Title Override <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                  <FieldInfo
-                    title="Google Title Override"
-                    description="Sent to Google instead of the main Title above, if filled in. Use this when you want different wording optimized for Google's search algorithm than what a human visitor sees on the product page. Leave blank to just use the Title for both."
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="google_title">Google Title Override <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                    <FieldInfo
+                      title="Google Title Override"
+                      description="Sent to Google instead of the main Title above, if filled in. Leave blank to let the Merchant integration use the main product title automatically."
+                    />
+                  </div>
+                  <AIWriteButton
+                    getValue={() => googleTitle || name}
+                    onResult={(value) => setGoogleTitle(value.slice(0, 150))}
+                    fieldRole="google_title"
+                    defaultLocale={storeSourceLocale}
                   />
                 </div>
                 <Input
                   id="google_title"
                   name="google_title"
-                  defaultValue={product?.google_title ?? ""}
-                  placeholder="Leave blank to use Title"
+                  maxLength={150}
+                  value={googleTitle}
+                  onChange={(event) => setGoogleTitle(event.target.value)}
+                  placeholder="Leave blank to use Title automatically"
                 />
                 <FieldError name="google_title" errors={fieldErrors} />
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="google_description">Google Description Override <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                  <FieldInfo
-                    title="Google Description Override"
-                    description="Sent to Google instead of the main Description above, if filled in. Same idea as Google Title Override — separate wording for Google vs. your storefront. Leave blank to just use the Description for both."
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="google_description">Google Description Override <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                    <FieldInfo
+                      title="Google Description Override"
+                      description="Sent to Google instead of the main Description above, if filled in. Leave blank to let the Merchant integration use the main product description automatically."
+                    />
+                  </div>
+                  <AIWriteButton
+                    getValue={() => googleDescription || stripHtml(description) || shortDescription}
+                    onResult={(value) => setGoogleDescription(value.slice(0, 5000))}
+                    fieldRole="google_description"
+                    defaultLocale={storeSourceLocale}
                   />
                 </div>
                 <Textarea
                   id="google_description"
                   name="google_description"
                   rows={3}
-                  defaultValue={product?.google_description ?? ""}
-                  placeholder="Leave blank to use Description"
+                  maxLength={5000}
+                  value={googleDescription}
+                  onChange={(event) => setGoogleDescription(event.target.value)}
+                  placeholder="Leave blank to use Description automatically"
                 />
                 <FieldError name="google_description" errors={fieldErrors} />
               </div>
-            </CardContent>
+              </CardContent>
+            </details>
           </Card>
         </div>
       </div>
+
+      <ProductMediaManager
+        initialItems={(product?.images ?? []).map((url, index) => ({
+          id: `existing-${index}`,
+          url,
+          title: product?.image_titles?.[index] ?? "",
+          alt: product?.image_alts?.[index] ?? "",
+          description: product?.image_descriptions?.[index] ?? "",
+        }))}
+        productName={name}
+        productDescription={description}
+        brand={brand}
+      />
+
+      <Card className="mt-4">
+        <CardHeader>
+          <div className="flex items-center gap-1.5">
+            <CardTitle className="text-base">Search Engine Listing</CardTitle>
+            <FieldInfo
+              title="Product SEO metadata"
+              description="The meta title and meta description help search engines understand this individual product page and often become the headline and summary shown in search results. Keep every product's metadata unique and closely aligned with the page content."
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Create the title and description customers may see when this product appears in search.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+          <div className="space-y-5">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="meta_title">SEO Meta Title</Label>
+                <AIWriteButton
+                  getValue={() => metaTitle || name}
+                  onResult={(value) => setMetaTitle(value.slice(0, 200))}
+                  fieldRole="meta_title"
+                  defaultLocale={storeSourceLocale}
+                />
+              </div>
+              <Input
+                id="meta_title"
+                name="meta_title"
+                maxLength={200}
+                value={metaTitle}
+                onChange={(event) => setMetaTitle(event.target.value)}
+                placeholder={name || "Concise product title for search results"}
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Aim for a clear, unique title of roughly 50–60 characters.</span>
+                <span className={cn(metaTitle.length > 60 && "text-amber-600")}>
+                  {metaTitle.length}/60 recommended
+                </span>
+              </div>
+              <FieldError name="meta_title" errors={fieldErrors} />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="meta_description">SEO Meta Description</Label>
+                <AIWriteButton
+                  getValue={() => metaDescription || shortDescription || stripHtml(description)}
+                  onResult={(value) => setMetaDescription(value.slice(0, 500))}
+                  fieldRole="meta_description"
+                  defaultLocale={storeSourceLocale}
+                />
+              </div>
+              <Textarea
+                id="meta_description"
+                name="meta_description"
+                rows={4}
+                maxLength={500}
+                value={metaDescription}
+                onChange={(event) => setMetaDescription(event.target.value)}
+                placeholder="Summarize this product's main benefit and distinguishing details"
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Aim for a useful summary of roughly 140–160 characters.</span>
+                <span className={cn(metaDescription.length > 160 && "text-amber-600")}>
+                  {metaDescription.length}/160 recommended
+                </span>
+              </div>
+              <FieldError name="meta_description" errors={fieldErrors} />
+            </div>
+
+          </div>
+
+          <div className="rounded-xl border bg-muted/20 p-5 lg:self-start">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Search preview
+            </p>
+            <div className="mt-4 rounded-lg border bg-background p-4 shadow-sm">
+              <p className="truncate text-sm text-emerald-700">
+                example-store.com/products/{slug || "product-url"}
+              </p>
+              <p className="mt-1 line-clamp-1 text-xl text-blue-700">
+                {metaTitle || name || "Your product SEO title"}
+              </p>
+              <p className="mt-1 line-clamp-3 text-sm leading-5 text-muted-foreground">
+                {metaDescription ||
+                  shortDescription ||
+                  "Your product meta description will preview here as you write it."}
+              </p>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Search engines may adjust the final wording depending on the customer&apos;s query.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="mt-4">
         <TranslationEditor
@@ -1039,6 +1022,8 @@ export function ProductForm({
             { name: "name", label: "Title" },
             { name: "short_description", label: "Short Description" },
             { name: "description", label: "Description", multiline: true },
+            { name: "meta_title", label: "SEO Meta Title" },
+            { name: "meta_description", label: "SEO Meta Description", multiline: true },
           ]}
         />
       </div>

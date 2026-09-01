@@ -45,7 +45,7 @@ export default async function DealerApplicationsPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold">Dealer Applications</h1>
+      <h1 className="text-2xl font-semibold">Dealership Management</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Applications submitted from your storefront — no need to create these manually
       </p>

@@ -20,15 +20,15 @@ export default async function OrdersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold">Orders &amp; Escrow</h1>
+      <h1 className="text-2xl font-semibold">Escrow Orders</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Orders placed through your storefront, with escrow status and buyer messaging
+        Customer-protection orders with secured funds, delivery verification, and buyer messaging
       </p>
 
       <div className="mt-6 space-y-3">
         {items.length === 0 && (
           <div className="rounded-lg border border-border bg-card py-10 text-center text-muted-foreground">
-            No orders yet.
+            No escrow orders yet.
           </div>
         )}
         {items.map((order) => {
@@ -49,8 +49,12 @@ export default async function OrdersPage() {
                     <div className="h-14 w-14 shrink-0 rounded-md border border-border bg-muted" />
                   )}
                   <div>
-                    <p className="font-medium text-primary hover:underline">{buyer?.name ?? order.buyer_user_id}</p>
-                    <p className="text-sm text-muted-foreground">{buyer?.email ?? "—"}</p>
+                    <p className="font-medium text-primary hover:underline">
+                      {order.buyer_name ?? buyer?.name ?? order.buyer_user_id}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {order.buyer_email ?? buyer?.email ?? "—"}
+                    </p>
                     <p className="font-mono text-xs text-muted-foreground">{orderRef(order.id)}</p>
                     {item && (
                       <p className="mt-1 text-sm text-muted-foreground">

@@ -1,9 +1,13 @@
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ToggleStatusButton } from "@/app/dashboard/inquiries/toggle-status-button";
 import { DeleteInquiryButton } from "@/app/dashboard/inquiries/delete-inquiry-button";
+import { inquiryRef } from "@/lib/inquiry-display";
 import type { Inquiry, Product } from "@/lib/types";
 
 export default async function InquiriesPage() {
@@ -27,7 +31,7 @@ export default async function InquiriesPage() {
     <div>
       <h1 className="text-2xl font-semibold">Inquiries</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Customer requests and orders from your storefront
+        Review customer details, product information, and Price on Request submissions
       </p>
 
       <div className="mt-6 space-y-3">
@@ -49,6 +53,7 @@ export default async function InquiriesPage() {
                     {inquiry.status === "open" ? "Open" : "Closed"}
                   </Badge>
                 </div>
+                <p className="font-mono text-xs text-muted-foreground">{inquiryRef(inquiry)}</p>
                 <p className="text-sm text-muted-foreground">
                   {[inquiry.customer_email, inquiry.customer_phone].filter(Boolean).join(" · ")}
                 </p>
@@ -63,6 +68,11 @@ export default async function InquiriesPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <Button asChild size="sm">
+                  <Link href={`/dashboard/inquiries/${inquiry.id}`}>
+                    Manage <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  </Link>
+                </Button>
                 <ToggleStatusButton inquiryId={inquiry.id} status={inquiry.status} />
                 <DeleteInquiryButton inquiryId={inquiry.id} />
               </div>

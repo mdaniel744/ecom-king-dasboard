@@ -120,44 +120,6 @@ export type Guide = {
   updated_at: string;
 };
 
-export type GlossaryRuleType = "preserve" | "always_translate" | "never_translate";
-
-export type GlossaryTerm = {
-  id: string;
-  store_id: string;
-  original_term: string;
-  rule_type: GlossaryRuleType;
-  /** Per-locale override text, e.g. {"en": "Pre-owned", "de": "Gebraucht"}.
-   * Ignored for never_translate rules — those always output original_term. */
-  translations: Record<string, string>;
-  notes: string | null;
-  active: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
-export type Faq = {
-  id: string;
-  store_id: string;
-  question: string;
-  answer: string;
-  category: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type LegalPage = {
-  id: string;
-  store_id: string;
-  title: string;
-  slug: string;
-  content: string | null;
-  meta_title: string | null;
-  meta_description: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 export type DealerApplicationStatus = "pending" | "approved" | "rejected";
 
 export type DealerApplication = {
@@ -242,6 +204,8 @@ export type Product = {
   slug: string;
   short_description: string | null;
   description: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
   price: number | null;
   sale_price: number | null;
   currency: string;
@@ -249,7 +213,9 @@ export type Product = {
   stock_quantity: number;
   status: ProductStatus;
   images: string[];
+  image_titles: string[];
   image_alts: string[];
+  image_descriptions: string[];
   attributes: Record<string, string>;
   brand: string | null;
   /** Optional link to a structured brands row — only used by stores that
@@ -319,14 +285,132 @@ export type InquiryStatus = "open" | "closed";
 export type Inquiry = {
   id: string;
   store_id: string;
+  inquiry_number?: string | null;
   product_id: string | null;
   customer_name: string | null;
   customer_email: string | null;
   customer_phone: string | null;
+  customer_company?: string | null;
+  customer_address?: Record<string, unknown> | null;
+  product_url?: string | null;
+  requested_quantity?: number | null;
   message: string | null;
   details: Record<string, unknown>;
+  admin_notes?: string | null;
   status: InquiryStatus;
   created_at: string;
+  updated_at?: string;
+};
+
+export type CheckoutOrderStatus =
+  | "pending_payment"
+  | "paid"
+  | "processing"
+  | "ready_to_ship"
+  | "shipped"
+  | "completed"
+  | "cancelled";
+
+export type CheckoutPaymentStatus = "pending" | "paid" | "failed" | "refunded";
+export type CheckoutInvoiceStatus = "not_sent" | "sent" | "failed";
+export type InvoiceTemplate = "classic" | "modern" | "minimal" | "corporate";
+
+export type InvoiceSettings = {
+  store_id: string;
+  template: InvoiceTemplate;
+  accent_color: string;
+  font_family: "sans" | "serif";
+  logo_url: string | null;
+  business_name: string;
+  business_address: string | null;
+  business_email: string | null;
+  business_phone: string | null;
+  business_website: string | null;
+  company_registration_number: string | null;
+  vat_registration_number: string | null;
+  tax_id: string | null;
+  account_manager_name: string | null;
+  account_manager_email: string | null;
+  account_manager_phone: string | null;
+  invoice_prefix: string;
+  due_days: number;
+  payment_terms: string | null;
+  delivery_terms: string | null;
+  deposit_percentage: number;
+  commercial_terms: string | null;
+  auto_send: boolean;
+  footer_note: string | null;
+  show_logo: boolean;
+  show_billing_address: boolean;
+  show_shipping_address: boolean;
+  show_tax_breakdown: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CardPaymentProvider = "stripe" | "paystack" | "flutterwave" | "other";
+
+export type PaymentSettings = {
+  store_id: string;
+  bank_transfer_enabled: boolean;
+  bank_name: string | null;
+  bank_account_name: string | null;
+  bank_account_number: string | null;
+  bank_country: string | null;
+  bank_currency: string;
+  bank_iban: string | null;
+  bank_swift_bic: string | null;
+  bank_instructions: string | null;
+  card_enabled: boolean;
+  card_provider: CardPaymentProvider | null;
+  card_checkout_label: string | null;
+  crypto_enabled: boolean;
+  crypto_assets: string[];
+  crypto_wallet_details: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CustomerAddress = {
+  full_name?: string;
+  company?: string;
+  address_line_1?: string;
+  address_line_2?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+};
+
+export type CheckoutOrder = {
+  id: string;
+  store_id: string;
+  order_number: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string | null;
+  line_items: OrderLineItem[];
+  billing_address: CustomerAddress | null;
+  delivery_address: CustomerAddress | null;
+  subtotal: number;
+  discount_amount: number;
+  shipping_amount: number;
+  tax_amount: number;
+  total_amount: number;
+  currency: string;
+  payment_method: "bank_transfer";
+  payment_status: CheckoutPaymentStatus;
+  payment_reference: string | null;
+  order_status: CheckoutOrderStatus;
+  customer_note: string | null;
+  admin_notes: string | null;
+  tracking_number: string | null;
+  auto_invoice: boolean;
+  invoice_number: string | null;
+  invoice_status: CheckoutInvoiceStatus;
+  invoice_sent_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type OrderEscrowStatus =
@@ -355,7 +439,11 @@ export type Order = {
   id: string;
   store_id: string;
   buyer_user_id: string;
+  buyer_name?: string | null;
+  buyer_email?: string | null;
   dealer_user_id: string | null;
+  dealer_name?: string | null;
+  dealer_email?: string | null;
   products: OrderLineItem[];
   total_amount: number;
   currency: string;

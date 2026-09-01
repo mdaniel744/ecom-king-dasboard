@@ -8,7 +8,8 @@ import { slugify } from "@/lib/slug";
 import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { syncTranslations } from "@/lib/translation-sync";
-import type { Store } from "@/lib/types";
+import { getAttributeDefs } from "@/lib/attribute-defs";
+import type { ProductFamily, Store } from "@/lib/types";
 
 const familyFieldsSchema = z.object({
   name: z.string().trim().min(1, "Family name is required").max(200, "Name is too long"),
@@ -37,31 +38,39 @@ function readFamilyFields(formData: FormData) {
   });
 }
 
-export async function createProductFamily(formData: FormData): Promise<ActionResult> {
+type FamilyFields = ReturnType<typeof readFamilyFields>;
+
+async function insertProductFamily(store: Store, fields: FamilyFields): Promise<ProductFamily> {
+  const { data: family, error } = await supabaseAdmin
+    .from("product_families")
+    .insert({
+      store_id: store.id,
+      category_id: fields.categoryId,
+      name: fields.name,
+      slug: slugify(fields.name),
+      description: fields.description,
+      short_description: fields.shortDescription,
+      images: fields.imageUrl ? [fields.imageUrl] : [],
+      is_featured: fields.isFeatured,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await syncFamilyTranslations(store, family.id, fields);
+  return family as ProductFamily;
+}
+
+export async function createProductFamily(
+  formData: FormData
+): Promise<ActionResult<{ id: string }>> {
   try {
     const store = await getCurrentStore();
-    const fields = readFamilyFields(formData);
+    const family = await insertProductFamily(store, readFamilyFields(formData));
 
-    const { data: family, error } = await supabaseAdmin
-      .from("product_families")
-      .insert({
-        store_id: store.id,
-        category_id: fields.categoryId,
-        name: fields.name,
-        slug: slugify(fields.name),
-        description: fields.description,
-        short_description: fields.shortDescription,
-        images: fields.imageUrl ? [fields.imageUrl] : [],
-        is_featured: fields.isFeatured,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await syncFamilyTranslations(store, family.id, fields);
     revalidatePath("/dashboard/product-families");
-    return ok();
+    return ok({ id: family.id });
   } catch (err) {
     return toActionResult(err);
   }
@@ -90,6 +99,7 @@ export async function updateProductFamily(familyId: string, formData: FormData):
 
     await syncFamilyTranslations(store, familyId, fields);
     revalidatePath("/dashboard/product-families");
+    revalidatePath(`/dashboard/product-families/${familyId}`);
     revalidatePath("/dashboard/products");
     return ok();
   } catch (err) {
@@ -140,9 +150,122 @@ export async function deleteProductFamily(familyId: string): Promise<ActionResul
   }
 }
 
+function revalidateProductFamilyAssignment(familyId: string) {
+  revalidatePath("/dashboard/products");
+  revalidatePath("/dashboard/product-families");
+  revalidatePath(`/dashboard/product-families/${familyId}`);
+}
+
+export async function removeProductFromFamily(
+  productId: string,
+  familyId: string
+): Promise<ActionResult> {
+  try {
+    productId = validateId(productId);
+    familyId = validateId(familyId);
+    const store = await getCurrentStore();
+
+    const { data: product } = await supabaseAdmin
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .eq("family_id", familyId)
+      .maybeSingle();
+
+    if (!product) throw new Error("This product is no longer in the selected family.");
+
+    const { error } = await supabaseAdmin
+      .from("products")
+      .update({ family_id: null })
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .eq("family_id", familyId);
+
+    if (error) throw error;
+
+    revalidateProductFamilyAssignment(familyId);
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
 const NEW_KEYWORDS = ["new", "ny", "one trip"];
 const USED_KEYWORDS = ["used", "brugt"];
 const REFURBISHED_KEYWORDS = ["refurb"];
+const MAX_VARIANTS_PER_GENERATION = 100;
+
+type VariantAxis = {
+  name: string;
+  values: string[];
+};
+
+function readVariantAxes(formData: FormData): VariantAxis[] {
+  const attributeNames = Array.from(
+    new Set(
+      (formData.getAll("selected_attributes") as string[])
+        .map((name) => name.trim())
+        .filter(Boolean)
+    )
+  );
+
+  return attributeNames
+    .map((name) => ({
+      name,
+      values: Array.from(
+        new Set(
+          (formData.getAll(`values:${name}`) as string[])
+            .map((value) => value.trim())
+            .filter(Boolean)
+        )
+      ),
+    }))
+    .filter((axis) => axis.values.length > 0);
+}
+
+async function validateVariantAxes(storeId: string, axes: VariantAxis[]): Promise<VariantAxis[]> {
+  if (axes.length === 0) {
+    throw new Error("Pick at least one product attribute and at least one value.");
+  }
+
+  const attributeDefs = await getAttributeDefs(storeId);
+  const allowedByName = new Map(
+    attributeDefs.map((attribute) => [attribute.name, new Set(attribute.values)])
+  );
+
+  for (const axis of axes) {
+    const allowedValues = allowedByName.get(axis.name);
+    if (!allowedValues) {
+      throw new Error(`The attribute “${axis.name}” is no longer available.`);
+    }
+    const invalidValue = axis.values.find((value) => !allowedValues.has(value));
+    if (invalidValue) {
+      throw new Error(`The value “${invalidValue}” is no longer available for ${axis.name}.`);
+    }
+  }
+
+  const combinationCount = axes.reduce((total, axis) => total * axis.values.length, 1);
+  if (combinationCount > MAX_VARIANTS_PER_GENERATION) {
+    throw new Error(
+      `That selection creates ${combinationCount} variations. Generate no more than ${MAX_VARIANTS_PER_GENERATION} at a time.`
+    );
+  }
+
+  return axes;
+}
+
+function buildCombinations(axes: VariantAxis[]): Record<string, string>[] {
+  let combinations: Record<string, string>[] = [{}];
+
+  for (const axis of axes) {
+    combinations = combinations.flatMap((combination) =>
+      axis.values.map((value) => ({ ...combination, [axis.name]: value }))
+    );
+  }
+
+  return combinations;
+}
 
 /** Best-effort: if one of the selected axis values looks like a condition
  * word, use it to set the real `condition` column too (not just leave it in
@@ -150,9 +273,9 @@ const REFURBISHED_KEYWORDS = ["refurb"];
  * products, since Google Merchant sync reads the column, not the JSON. */
 function guessCondition(values: string[]): "new" | "used" | "refurbished" {
   const joined = values.join(" ").toLowerCase();
-  if (REFURBISHED_KEYWORDS.some((k) => joined.includes(k))) return "refurbished";
-  if (USED_KEYWORDS.some((k) => joined.includes(k))) return "used";
-  if (NEW_KEYWORDS.some((k) => joined.includes(k))) return "new";
+  if (REFURBISHED_KEYWORDS.some((keyword) => joined.includes(keyword))) return "refurbished";
+  if (USED_KEYWORDS.some((keyword) => joined.includes(keyword))) return "used";
+  if (NEW_KEYWORDS.some((keyword) => joined.includes(keyword))) return "new";
   return "new";
 }
 
@@ -172,27 +295,96 @@ async function uniqueSlug(base: string, storeId: string): Promise<string> {
   }
 }
 
+async function generateVariantsForFamily(
+  store: Store,
+  family: ProductFamily,
+  axes: VariantAxis[]
+): Promise<{ created: number; skipped: number }> {
+  const combinations = buildCombinations(axes);
+  const axisNames = axes.map((axis) => axis.name);
+  const comboKey = (attributes: Record<string, string>) =>
+    axisNames.map((name) => attributes?.[name] ?? "").join("\u001f");
+
+  const { data: siblings } = await supabaseAdmin
+    .from("products")
+    .select("attributes")
+    .eq("store_id", store.id)
+    .eq("family_id", family.id);
+  const existingKeys = new Set(
+    (siblings ?? []).map((product) => comboKey(product.attributes as Record<string, string>))
+  );
+
+  const { data: currencySample } = await supabaseAdmin
+    .from("products")
+    .select("currency")
+    .eq("store_id", store.id)
+    .eq("family_id", family.id)
+    .limit(1)
+    .maybeSingle();
+  const defaultCurrency = currencySample?.currency ?? "USD";
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const combination of combinations) {
+    if (existingKeys.has(comboKey(combination))) {
+      skipped += 1;
+      continue;
+    }
+
+    const suffix = axisNames.map((name) => combination[name]).join(", ");
+    const name = `${family.name} — ${suffix}`;
+    const slug = await uniqueSlug(slugify(name), store.id);
+
+    const { error } = await supabaseAdmin.from("products").insert({
+      store_id: store.id,
+      family_id: family.id,
+      category_id: family.category_id,
+      name,
+      slug,
+      attributes: combination,
+      status: "draft",
+      condition: guessCondition(Object.values(combination)),
+      currency: defaultCurrency,
+      stock_quantity: 0,
+      images: [],
+      image_titles: [],
+      image_alts: [],
+      image_descriptions: [],
+    });
+    if (error) throw error;
+    created += 1;
+  }
+
+  return { created, skipped };
+}
+
+function revalidateFamilyPages(familyId: string) {
+  revalidatePath("/dashboard/products");
+  revalidatePath("/dashboard/product-families");
+  revalidatePath(`/dashboard/product-families/${familyId}`);
+  revalidatePath(`/dashboard/product-families/${familyId}/generate`);
+}
+
+export async function createProductFamilyWithVariants(
+  formData: FormData
+): Promise<ActionResult<{ familyId: string; created: number; skipped: number }>> {
+  try {
+    const store = await getCurrentStore();
+    const axes = await validateVariantAxes(store.id, readVariantAxes(formData));
+    const family = await insertProductFamily(store, readFamilyFields(formData));
+    const result = await generateVariantsForFamily(store, family, axes);
+
+    revalidateFamilyPages(family.id);
+    return ok({ familyId: family.id, ...result });
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
 /**
- * Bulk-creates one draft product per combination of the selected attribute
- * values -- e.g. Type [Standard, High Cube] x Condition [New, Used] x
- * Colour [Blue, Green] creates up to 8 products in one pass, each already
- * tagged with this family, the right attributes, and a suggested (fully
- * editable) name -- instead of creating each one by hand.
- *
- * Every generated product is a completely normal, independent product row
- * -- same as if it had been created through "New Product" one at a time.
- * Nothing about how products/Merchant sync/the storefront read this table
- * changes; this just automates the repetitive part of creating several at
- * once.
- *
- * Left for the operator to fill in afterward, deliberately not guessed:
- * price, images, description. Status starts as "draft" specifically so an
- * incomplete generated row can never accidentally sync to Google or appear
- * live on the storefront before someone's actually finished it.
- *
- * Combinations that already exist in this family (by exact attribute match)
- * are skipped, not duplicated -- safe to run again after adding a new
- * colour without recreating everything that's already there.
+ * Creates one independent draft product for every selected attribute
+ * combination. Existing combinations in the same family are skipped.
  */
 export async function generateFamilyVariants(
   familyId: string,
@@ -207,88 +399,14 @@ export async function generateFamilyVariants(
       .select("*")
       .eq("id", familyId)
       .eq("store_id", store.id)
-      .single();
+      .maybeSingle();
     if (!family) return { success: false, error: "Family not found.", fieldErrors: {} };
 
-    const attributeNames = formData.getAll("selected_attributes") as string[];
-    const axes = attributeNames
-      .map((attrName) => ({
-        name: attrName,
-        values: (formData.getAll(`values:${attrName}`) as string[]).filter(Boolean),
-      }))
-      .filter((axis) => axis.values.length > 0);
+    const axes = await validateVariantAxes(store.id, readVariantAxes(formData));
+    const result = await generateVariantsForFamily(store, family as ProductFamily, axes);
 
-    if (axes.length === 0) {
-      return { success: false, error: "Pick at least one attribute and at least one value.", fieldErrors: {} };
-    }
-
-    let combos: Record<string, string>[] = [{}];
-    for (const axis of axes) {
-      const next: Record<string, string>[] = [];
-      for (const combo of combos) {
-        for (const value of axis.values) {
-          next.push({ ...combo, [axis.name]: value });
-        }
-      }
-      combos = next;
-    }
-
-    const axisNames = axes.map((a) => a.name);
-    const comboKey = (attrs: Record<string, string>) =>
-      JSON.stringify(axisNames.map((n) => attrs?.[n] ?? "").join(" "));
-
-    const { data: siblings } = await supabaseAdmin
-      .from("products")
-      .select("attributes")
-      .eq("family_id", familyId);
-    const existingKeys = new Set((siblings ?? []).map((p) => comboKey(p.attributes as Record<string, string>)));
-
-    // A representative sibling's currency, if one exists, so generated
-    // drafts aren't left on a currency mismatched with the rest of the
-    // family -- purely a convenience default, fully editable per product.
-    const { data: currencySample } = await supabaseAdmin
-      .from("products")
-      .select("currency")
-      .eq("family_id", familyId)
-      .limit(1)
-      .maybeSingle();
-    const defaultCurrency = currencySample?.currency ?? "USD";
-
-    let created = 0;
-    let skipped = 0;
-
-    for (const combo of combos) {
-      if (existingKeys.has(comboKey(combo))) {
-        skipped += 1;
-        continue;
-      }
-
-      const suffix = axisNames.map((n) => combo[n]).join(", ");
-      const name = `${family.name} — ${suffix}`;
-      const slug = await uniqueSlug(slugify(name), store.id);
-      const condition = guessCondition(Object.values(combo));
-
-      const { error } = await supabaseAdmin.from("products").insert({
-        store_id: store.id,
-        family_id: familyId,
-        category_id: family.category_id,
-        name,
-        slug,
-        attributes: combo,
-        status: "draft",
-        condition,
-        currency: defaultCurrency,
-        stock_quantity: 0,
-        images: [],
-        image_alts: [],
-      });
-      if (error) throw error;
-      created += 1;
-    }
-
-    revalidatePath("/dashboard/products");
-    revalidatePath("/dashboard/product-families");
-    return ok({ created, skipped });
+    revalidateFamilyPages(familyId);
+    return ok(result);
   } catch (err) {
     return toActionResult(err);
   }

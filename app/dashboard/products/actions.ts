@@ -21,6 +21,8 @@ const productPayloadSchema = z.object({
   slug: z.string().min(1).max(500),
   short_description: z.string().trim().max(500, "Short description is too long (max 500 characters)").nullable(),
   description: z.string().trim().max(10000, "Description is too long").nullable(),
+  meta_title: z.string().trim().max(200, "SEO meta title is too long").nullable(),
+  meta_description: z.string().trim().max(500, "SEO meta description is too long").nullable(),
   price: z.number("Price must be a number").finite().min(0, "Price can't be negative").nullable(),
   sale_price: z.number("Sale price must be a number").finite().min(0, "Sale price can't be negative").nullable(),
   currency: z.string().trim().length(3, "Currency must be a 3-letter code, e.g. USD"),
@@ -41,7 +43,9 @@ const productPayloadSchema = z.object({
   family_id: z.string().uuid("Choose a valid product family").nullable(),
   reference_number: z.string().trim().max(200, "Reference number is too long").nullable(),
   images: z.array(z.string().trim().min(1).max(2000)).max(20, "Maximum 20 images"),
+  image_titles: z.array(z.string().trim().max(500)).max(20),
   image_alts: z.array(z.string().trim().max(500)).max(20),
+  image_descriptions: z.array(z.string().trim().max(2000)).max(20),
   attributes: z.record(z.string(), z.string()),
 });
 
@@ -68,14 +72,20 @@ function parseAttributes(formData: FormData): Record<string, string> {
   return attributes;
 }
 
-function parseImages(formData: FormData): string[] {
-  return (formData.getAll("images") as string[])
-    .map((url) => url.trim())
-    .filter(Boolean);
-}
+function parseProductMedia(formData: FormData) {
+  const urls = formData.getAll("images") as string[];
+  const titles = formData.getAll("image_titles") as string[];
+  const alts = formData.getAll("image_alts") as string[];
+  const descriptions = formData.getAll("image_descriptions") as string[];
 
-function parseImageAlts(formData: FormData): string[] {
-  return (formData.getAll("image_alts") as string[]).map((s) => s.trim());
+  return urls
+    .map((url, index) => ({
+      url: url.trim(),
+      title: (titles[index] ?? "").trim(),
+      alt: (alts[index] ?? "").trim(),
+      description: (descriptions[index] ?? "").trim(),
+    }))
+    .filter((item) => item.url);
 }
 
 async function buildProductPayload(formData: FormData, storeId: string) {
@@ -87,6 +97,7 @@ async function buildProductPayload(formData: FormData, storeId: string) {
   const brandId = (formData.get("brand_id") as string) || null;
   const collectionId = (formData.get("collection_id") as string) || null;
   const familyId = (formData.get("family_id") as string) || null;
+  const media = parseProductMedia(formData);
 
   await assertOwnedByStore("brands", brandId, storeId);
   await assertOwnedByStore("collections", collectionId, storeId);
@@ -97,6 +108,8 @@ async function buildProductPayload(formData: FormData, storeId: string) {
     slug: slugify(rawSlug || name),
     short_description: (formData.get("short_description") as string) || null,
     description: (formData.get("description") as string) || null,
+    meta_title: (formData.get("meta_title") as string)?.trim() || null,
+    meta_description: (formData.get("meta_description") as string)?.trim() || null,
     price: priceRaw ? Number(priceRaw) : null,
     sale_price: salePriceRaw ? Number(salePriceRaw) : null,
     currency: (formData.get("currency") as string) || "USD",
@@ -116,8 +129,10 @@ async function buildProductPayload(formData: FormData, storeId: string) {
     collection_id: collectionId,
     family_id: familyId,
     reference_number: (formData.get("reference_number") as string)?.trim() || null,
-    images: parseImages(formData),
-    image_alts: parseImageAlts(formData),
+    images: media.map((item) => item.url),
+    image_titles: media.map((item) => item.title),
+    image_alts: media.map((item) => item.alt),
+    image_descriptions: media.map((item) => item.description),
     attributes: parseAttributes(formData),
   });
 }
@@ -138,6 +153,9 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
     await syncProductTranslations(store, product as Product);
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");
+    if (payload.family_id) {
+      revalidatePath(`/dashboard/product-families/${payload.family_id}`);
+    }
     return ok();
   } catch (err) {
     return toActionResult(err);
@@ -149,6 +167,12 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     productId = validateId(productId);
     const store = await getCurrentStore();
     const payload = await buildProductPayload(formData, store.id);
+    const { data: existingProduct } = await supabaseAdmin
+      .from("products")
+      .select("family_id")
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .maybeSingle();
 
     const { data: product, error } = await supabaseAdmin
       .from("products")
@@ -163,6 +187,9 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     await syncProductTranslations(store, product as Product);
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");
+    for (const familyId of new Set([existingProduct?.family_id, payload.family_id])) {
+      if (familyId) revalidatePath(`/dashboard/product-families/${familyId}`);
+    }
     return ok();
   } catch (err) {
     return toActionResult(err);
@@ -181,6 +208,8 @@ async function syncProductTranslations(store: Store, product: Product) {
       name: product.name,
       short_description: product.short_description,
       description: product.description,
+      meta_title: product.meta_title,
+      meta_description: product.meta_description,
       badge: product.badge,
       // Only translated when actually set — most products never set these,
       // so this is a no-op for every product that doesn't use the override.
@@ -194,6 +223,12 @@ export async function deleteProduct(productId: string): Promise<ActionResult> {
   try {
     productId = validateId(productId);
     const store = await getCurrentStore();
+    const { data: product } = await supabaseAdmin
+      .from("products")
+      .select("family_id")
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .maybeSingle();
 
     const { error } = await supabaseAdmin
       .from("products")
@@ -204,6 +239,10 @@ export async function deleteProduct(productId: string): Promise<ActionResult> {
     if (error) throw error;
 
     revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/product-families");
+    if (product?.family_id) {
+      revalidatePath(`/dashboard/product-families/${product.family_id}`);
+    }
     return ok();
   } catch (err) {
     return toActionResult(err);

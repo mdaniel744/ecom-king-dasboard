@@ -4,9 +4,12 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isLocalDemoMode, localDemoStore } from "@/lib/local-demo";
 import type { Store } from "@/lib/types";
 
 export const getCurrentStore = cache(async (): Promise<Store> => {
+  if (isLocalDemoMode) return localDemoStore;
+
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
