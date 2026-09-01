@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { Pencil, Unlink } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { removeProductFromFamily } from "@/app/dashboard/product-families/actions";
+import { deleteProduct } from "@/app/dashboard/products/actions";
 
 export function FamilyVariantActions({
   productId,
@@ -21,19 +21,19 @@ export function FamilyVariantActions({
   const [isPending, startTransition] = useTransition();
   const familyHref = `/dashboard/product-families/${currentFamilyId}`;
 
-  function removeFromFamily() {
+  function deleteVariant() {
     const confirmed = window.confirm(
-      `Remove ${productName} from this family? It will remain available as a standalone product.`
+      `Permanently delete ${productName}? It will be removed from this family and the database. This cannot be undone.`
     );
     if (!confirmed) return;
 
     startTransition(async () => {
-      const result = await removeProductFromFamily(productId, currentFamilyId);
+      const result = await deleteProduct(productId);
       if (result.success) {
-        toast.success(`${productName} is now a standalone product.`);
+        toast.success(`${productName} was permanently deleted.`);
         router.refresh();
       } else {
-        toast.error(result.error ?? "The product could not be removed from this family.");
+        toast.error(result.error ?? "The product could not be deleted.");
       }
     });
   }
@@ -53,10 +53,10 @@ export function FamilyVariantActions({
         size="sm"
         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
         disabled={isPending}
-        onClick={removeFromFamily}
+        onClick={deleteVariant}
       >
-        <Unlink className="mr-1.5 h-3.5 w-3.5" />
-        Remove
+        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+        {isPending ? "Deleting…" : "Delete"}
       </Button>
     </div>
   );

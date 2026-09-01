@@ -5,6 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClerkClient } from "@clerk/backend";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isLocalDemoMode } from "@/lib/local-demo";
 import { validateId, ValidationError } from "@/lib/validation";
 import { ok, type ActionResult } from "@/lib/action-result";
 import type { DealerApplicationStatus } from "@/lib/types";
@@ -34,7 +35,7 @@ async function setStatus(applicationId: string, status: DealerApplicationStatus)
   try {
     applicationId = validateId(applicationId);
     const store = await getCurrentStore();
-    const { userId } = await auth();
+    const userId = isLocalDemoMode ? "demo_owner" : (await auth()).userId;
 
     if (status === "approved") {
       // Grant the Clerk role FIRST, before touching Supabase — if this
@@ -51,7 +52,7 @@ async function setStatus(applicationId: string, status: DealerApplicationStatus)
         return { success: false, error: "Application not found.", fieldErrors: {} };
       }
 
-      await grantDealerRole(application.dealer_user_id);
+      if (!isLocalDemoMode) await grantDealerRole(application.dealer_user_id);
     }
 
     const { error } = await supabaseAdmin
@@ -63,6 +64,7 @@ async function setStatus(applicationId: string, status: DealerApplicationStatus)
     if (error) throw error;
 
     revalidatePath("/dashboard/dealer-applications");
+    revalidatePath(`/dashboard/dealer-applications/${applicationId}`);
     return ok();
   } catch (err) {
     if (err instanceof ValidationError) {

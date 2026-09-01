@@ -13,7 +13,14 @@ import {
   type ParsedProductImport,
 } from "@/lib/product-transfer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
+import type {
+  Brand,
+  Category,
+  Collection,
+  DealerApplication,
+  Product,
+  ProductFamily,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -141,6 +148,20 @@ function resolveRelation(
   return match?.id ?? null;
 }
 
+function resolveDealerUserId(
+  dealerUserId: string | null,
+  validDealerUserIds: Set<string>,
+  productName: string,
+  warnings: string[]
+) {
+  if (!dealerUserId) return null;
+  if (validDealerUserIds.has(dealerUserId)) return dealerUserId;
+  warnings.push(
+    `${productName}: dealer “${dealerUserId}” was not found in this store and the product was restored as store-owned.`
+  );
+  return null;
+}
+
 function validationMessage(error: unknown) {
   if (error instanceof z.ZodError) {
     return error.issues.map((issue) => `${issue.path.join(".") || "row"}: ${issue.message}`).join("; ");
@@ -155,6 +176,7 @@ function productPayload(
     category_id: string | null;
     brand_id: string | null;
     collection_id: string | null;
+    dealer_user_id: string | null;
     family_id: string | null;
   }
 ) {
@@ -262,12 +284,13 @@ export async function POST(request: NextRequest) {
     }
 
     const store = await getCurrentStore();
-    const [existingProducts, categories, brands, collections, families] = await Promise.all([
+    const [existingProducts, categories, brands, collections, families, dealerApplications] = await Promise.all([
       fetchStoreRows<Product>("products", store.id),
       fetchStoreRows<Category>("categories", store.id),
       fetchStoreRows<Brand>("brands", store.id),
       fetchStoreRows<Collection>("collections", store.id),
       fetchStoreRows<ProductFamily>("product_families", store.id),
+      fetchStoreRows<DealerApplication>("dealer_applications", store.id),
     ]);
     const byId = new Map(existingProducts.map((product) => [product.id, product]));
     const bySlug = new Map(existingProducts.map((product) => [product.slug, product]));
@@ -275,6 +298,9 @@ export async function POST(request: NextRequest) {
     const brandMaps = relationMaps(brands);
     const collectionMaps = relationMaps(collections);
     const familyMaps = relationMaps(families);
+    const validDealerUserIds = new Set(
+      dealerApplications.map((application) => application.dealer_user_id)
+    );
     const warnings: string[] = [];
     const planned = parsedRows.map((product, index) => {
       const idMatch = product.sourceId ? byId.get(product.sourceId) : null;
@@ -313,6 +339,12 @@ export async function POST(request: NextRequest) {
             product.collection_name,
             product.collection_slug,
             collectionMaps,
+            product.name,
+            warnings
+          ),
+          dealer_user_id: resolveDealerUserId(
+            product.dealer_user_id,
+            validDealerUserIds,
             product.name,
             warnings
           ),

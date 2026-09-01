@@ -8,6 +8,7 @@ import type {
   Category,
   Collection,
   CheckoutOrder,
+  DealerApplication,
   Inquiry,
   Order,
   OrderMessage,
@@ -137,6 +138,7 @@ const demoProductFamily: ProductFamily = {
 
 const demoSizes = ["Small", "Medium", "Large"];
 const demoColours = ["Black", "White", "Navy"];
+const demoDealerUserId = "user_demo_dealer";
 
 const demoProducts: Product[] = demoSizes.flatMap((size, sizeIndex) =>
   demoColours.map((colour, colourIndex) => {
@@ -172,6 +174,7 @@ const demoProducts: Product[] = demoSizes.flatMap((size, sizeIndex) =>
       brand: null,
       brand_id: null,
       collection_id: null,
+      dealer_user_id: index <= 6 ? demoDealerUserId : null,
       family_id: demoProductFamily.id,
       reference_number: null,
       gtin: null,
@@ -222,6 +225,64 @@ const demoInquiry: Inquiry = {
   created_at: now,
   updated_at: now,
 };
+
+const demoDealerApplications: DealerApplication[] = [
+  {
+    id: "00000000-0000-4000-8000-000000000551",
+    store_id: localDemoStore.id,
+    dealer_user_id: demoDealerUserId,
+    company_name: "Atlas Premium Dealers",
+    contact_email: "dealer@example.com",
+    phone: "+234 803 555 0182",
+    tax_id: "NG-VAT-2840193",
+    website: "https://example.com/atlas-premium",
+    address: "14 Adeola Odeku Street, Victoria Island, Lagos",
+    country: "Nigeria",
+    message:
+      "We specialise in premium apparel distribution and would like to publish our available inventory on the marketplace.",
+    status: "approved",
+    reviewed_by: "demo_owner",
+    reviewed_at: "2025-12-20T10:30:00.000Z",
+    created_at: "2025-12-18T09:15:00.000Z",
+    updated_at: "2025-12-20T10:30:00.000Z",
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000552",
+    store_id: localDemoStore.id,
+    dealer_user_id: "user_demo_pending_dealer",
+    company_name: "Kora Retail Partners",
+    contact_email: "applications@kora.example",
+    phone: "+234 806 555 0138",
+    tax_id: "NG-RC-910284",
+    website: "https://example.com/kora-retail",
+    address: "22 Obafemi Awolowo Way, Ikeja, Lagos",
+    country: "Nigeria",
+    message: "We operate three retail locations and want to offer our in-stock products online.",
+    status: "pending",
+    reviewed_by: null,
+    reviewed_at: null,
+    created_at: "2026-01-02T08:45:00.000Z",
+    updated_at: "2026-01-02T08:45:00.000Z",
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000553",
+    store_id: localDemoStore.id,
+    dealer_user_id: "user_demo_rejected_dealer",
+    company_name: "Northline Trading",
+    contact_email: "northline@example.com",
+    phone: null,
+    tax_id: null,
+    website: null,
+    address: "Abuja, FCT",
+    country: "Nigeria",
+    message: "Application submitted without complete company verification documents.",
+    status: "rejected",
+    reviewed_by: "demo_owner",
+    reviewed_at: "2025-12-22T14:00:00.000Z",
+    created_at: "2025-12-21T13:10:00.000Z",
+    updated_at: "2025-12-22T14:00:00.000Z",
+  },
+];
 
 const demoCheckoutOrder: CheckoutOrder = {
   id: "00000000-0000-4000-8000-000000000601",
@@ -388,6 +449,47 @@ const demoEscrowOrder: Order = {
   updated_at: now,
 };
 
+const demoCompletedDealerOrder: Order = {
+  id: "7ec0a001-0000-4000-8000-000000000702",
+  store_id: localDemoStore.id,
+  buyer_user_id: "user_demo_repeat_buyer",
+  buyer_name: "Zainab Musa",
+  buyer_email: "zainab@example.com",
+  dealer_user_id: demoDealerUserId,
+  dealer_name: "Atlas Premium Dealers",
+  dealer_email: "dealer@example.com",
+  products: [
+    {
+      product_id: demoProducts[0].id,
+      title: demoProducts[0].name,
+      price: 59,
+      currency: "USD",
+      image: demoProducts[0].images[0] ?? null,
+      quantity: 2,
+      condition: "New",
+      brand: "Ecom King Basics",
+    },
+  ],
+  total_amount: 118,
+  currency: "USD",
+  payment_method: "bank_transfer",
+  payment_reference: "https://example.com/demo-completed-payment.pdf",
+  escrow_status: "funds_released",
+  shipping_status: "delivered",
+  shipping_address: {
+    fullName: "Zainab Musa",
+    street: "8 Ahmadu Bello Way",
+    city: "Abuja",
+    postalCode: "900211",
+    country: "Nigeria",
+  },
+  tracking_number: "ATLAS-DEL-0192",
+  delivery_confirmed_at: "2025-12-28T11:45:00.000Z",
+  idempotency_key: "demo-escrow-order-0002",
+  created_at: "2025-12-24T08:00:00.000Z",
+  updated_at: "2025-12-28T12:00:00.000Z",
+};
+
 const demoEscrowMessages: OrderMessage[] = [
   {
     id: "00000000-0000-4000-8000-000000000711",
@@ -436,6 +538,7 @@ const demoRowsByTable: Record<string, Record<string, unknown>[]> = {
   attribute_values: demoAttributeValues as unknown as Record<string, unknown>[],
   product_families: [demoProductFamily as unknown as Record<string, unknown>],
   products: demoProducts as unknown as Record<string, unknown>[],
+  dealer_applications: demoDealerApplications as unknown as Record<string, unknown>[],
   inquiries: [demoInquiry as unknown as Record<string, unknown>],
   checkout_orders: [
     demoCheckoutOrder as unknown as Record<string, unknown>,
@@ -443,7 +546,10 @@ const demoRowsByTable: Record<string, Record<string, unknown>[]> = {
   ],
   invoice_settings: [],
   payment_settings: [],
-  orders: [demoEscrowOrder as unknown as Record<string, unknown>],
+  orders: [
+    demoEscrowOrder as unknown as Record<string, unknown>,
+    demoCompletedDealerOrder as unknown as Record<string, unknown>,
+  ],
   order_messages: demoEscrowMessages as unknown as Record<string, unknown>[],
 };
 
@@ -480,6 +586,7 @@ function localDemoInsertDefaults(table: string): Record<string, unknown> {
     brand: null,
     brand_id: null,
     collection_id: null,
+    dealer_user_id: null,
     family_id: null,
     reference_number: null,
     gtin: null,
@@ -589,12 +696,13 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
     const tableRows = (demoRowsByTable[this.table] ??= []);
 
     if (this.mutation === "delete") {
+      const deletedRows: Record<string, unknown>[] = [];
       for (let index = tableRows.length - 1; index >= 0; index -= 1) {
         if (this.filters.every((filter) => filter(tableRows[index]))) {
-          tableRows.splice(index, 1);
+          deletedRows.unshift(...tableRows.splice(index, 1));
         }
       }
-      return { data: null, error: null };
+      return { data: this.singular ? deletedRows[0] ?? null : deletedRows, error: null };
     }
 
     if (this.mutation === "insert") {

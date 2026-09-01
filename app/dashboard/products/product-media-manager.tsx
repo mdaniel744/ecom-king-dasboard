@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import {
+  Check,
   ImageIcon,
   ImagePlus,
   Link2,
@@ -66,6 +67,10 @@ export function ProductMediaManager({
   const [selectedId, setSelectedId] = useState(initialItems[0]?.id ?? "");
   const [linkedUrl, setLinkedUrl] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(
+    null
+  );
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set());
   const [generatingAltId, setGeneratingAltId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nextIdRef = useRef(initialItems.length);
@@ -75,6 +80,8 @@ export function ProductMediaManager({
     items.findIndex((item) => item.id === selectedId)
   );
   const selectedItem = items[selectedIndex] ?? null;
+  const selectedMediaCount = bulkSelectedIds.size;
+  const allMediaSelected = items.length > 0 && selectedMediaCount === items.length;
 
   function updateItem(id: string, patch: Partial<Omit<ProductMediaItem, "id">>) {
     setItems((current) =>
@@ -88,6 +95,41 @@ export function ProductMediaManager({
     const nextSelection = next[Math.min(Math.max(removedIndex, 0), next.length - 1)];
     setItems(next);
     setSelectedId(nextSelection?.id ?? "");
+    setBulkSelectedIds((current) => {
+      const updated = new Set(current);
+      updated.delete(id);
+      return updated;
+    });
+    toast.success("Image removed from this product. Save the product to apply the change.");
+  }
+
+  function toggleBulkSelection(id: string) {
+    setBulkSelectedIds((current) => {
+      const updated = new Set(current);
+      if (updated.has(id)) updated.delete(id);
+      else updated.add(id);
+      return updated;
+    });
+  }
+
+  function toggleSelectAll() {
+    setBulkSelectedIds(allMediaSelected ? new Set() : new Set(items.map((item) => item.id)));
+  }
+
+  function removeSelectedItems() {
+    if (bulkSelectedIds.size === 0) return;
+
+    const removedIds = new Set(bulkSelectedIds);
+    const next = items.filter((item) => !removedIds.has(item.id));
+    const removedCount = items.length - next.length;
+    setItems(next);
+    setSelectedId((current) =>
+      removedIds.has(current) ? (next[0]?.id ?? "") : current
+    );
+    setBulkSelectedIds(new Set());
+    toast.success(
+      `${removedCount} image${removedCount === 1 ? "" : "s"} removed from this product. Save the product to apply the change.`
+    );
   }
 
   function makeMainImage(id: string) {
@@ -127,12 +169,18 @@ export function ProductMediaManager({
       toast.error(`A product can have up to ${MAX_MEDIA_ITEMS} images.`);
       return;
     }
+    if (fileList.length > availableSlots) {
+      toast.info(
+        `Only ${availableSlots} image${availableSlots === 1 ? "" : "s"} can be added because the product limit is ${MAX_MEDIA_ITEMS}.`
+      );
+    }
 
     setIsUploading(true);
+    setUploadProgress({ completed: 0, total: files.length });
     try {
       const uploadedItems: ProductMediaItem[] = [];
 
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
         const formData = new FormData();
         formData.set("file", file);
         formData.set("folder", "products");
@@ -149,6 +197,7 @@ export function ProductMediaManager({
         } else {
           toast.error(result.error ?? `Failed to upload ${file.name}`);
         }
+        setUploadProgress({ completed: index + 1, total: files.length });
       }
 
       if (uploadedItems.length === 0) return;
@@ -178,6 +227,7 @@ export function ProductMediaManager({
       }
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -230,7 +280,7 @@ export function ProductMediaManager({
             />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {items.length} of {MAX_MEDIA_ITEMS} images · only media for this product is shown
+            {items.length} of {MAX_MEDIA_ITEMS} images · choose several files in one upload
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -255,7 +305,9 @@ export function ProductMediaManager({
             ) : (
               <ImagePlus className="mr-2 h-4 w-4" />
             )}
-            {isUploading ? "Uploading..." : "Upload Images"}
+            {isUploading && uploadProgress
+              ? `Uploading ${uploadProgress.completed}/${uploadProgress.total}`
+              : "Upload Images"}
           </Button>
         </div>
       </CardHeader>
@@ -311,50 +363,96 @@ export function ProductMediaManager({
                 </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                {items.map((item, index) => {
-                  const isSelected = item.id === selectedItem?.id;
-                  const accessibleName = item.alt || item.title || `Product image ${index + 1}`;
-
-                  return (
-                    <button
-                      key={item.id}
+              <div>
+                <div className="mb-3 flex flex-col gap-2 rounded-lg border bg-muted/25 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground" aria-live="polite">
+                    {selectedMediaCount > 0
+                      ? `${selectedMediaCount} of ${items.length} selected`
+                      : "Select images using the checkboxes for bulk actions"}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={toggleSelectAll}>
+                      {allMediaSelected ? "Clear selection" : "Select all"}
+                    </Button>
+                    <Button
                       type="button"
-                      aria-label={`Select ${accessibleName}`}
-                      aria-pressed={isSelected}
-                      onClick={() => setSelectedId(item.id)}
-                      className={cn(
-                        "group relative overflow-hidden rounded-lg border bg-muted text-left transition",
-                        isSelected
-                          ? "border-primary ring-2 ring-primary/25"
-                          : "hover:border-foreground/30 hover:shadow-sm"
-                      )}
+                      size="sm"
+                      variant="destructive"
+                      disabled={selectedMediaCount === 0}
+                      onClick={removeSelectedItems}
                     >
-                      <div className="aspect-square bg-muted/50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={item.url}
-                          alt={item.alt}
-                          className="h-full w-full object-cover"
-                        />
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                      Delete selected
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                  {items.map((item, index) => {
+                    const isSelected = item.id === selectedItem?.id;
+                    const isBulkSelected = bulkSelectedIds.has(item.id);
+                    const accessibleName = item.alt || item.title || `Product image ${index + 1}`;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "group relative overflow-hidden rounded-lg border bg-muted text-left transition",
+                          isBulkSelected
+                            ? "border-destructive ring-2 ring-destructive/25"
+                            : isSelected
+                              ? "border-primary ring-2 ring-primary/25"
+                              : "hover:border-foreground/30 hover:shadow-sm"
+                        )}
+                      >
+                        <button
+                          type="button"
+                          aria-label={`Open details for ${accessibleName}`}
+                          aria-pressed={isSelected}
+                          onClick={() => setSelectedId(item.id)}
+                          className="block w-full text-left"
+                        >
+                          <div className="aspect-square bg-muted/50">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.url}
+                              alt={item.alt}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                          <div className="border-t bg-card px-2.5 py-2">
+                            <p className="truncate text-xs font-medium">
+                              {item.title || `Image ${index + 1}`}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {index === 0 ? "Main image" : `Image ${index + 1}`}
+                            </p>
+                          </div>
+                          {index === 0 && (
+                            <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-[10px] font-medium shadow-sm backdrop-blur">
+                              <Star className="h-3 w-3 fill-current" />
+                              Main
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${isBulkSelected ? "Deselect" : "Select"} ${accessibleName} for bulk actions`}
+                          aria-pressed={isBulkSelected}
+                          onClick={() => toggleBulkSelection(item.id)}
+                          className={cn(
+                            "absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border shadow-sm backdrop-blur transition",
+                            isBulkSelected
+                              ? "border-destructive bg-destructive text-destructive-foreground"
+                              : "border-border bg-background/90 text-transparent hover:text-muted-foreground"
+                          )}
+                        >
+                          <Check className="h-4 w-4" />
+                        </button>
                       </div>
-                      <div className="border-t bg-card px-2.5 py-2">
-                        <p className="truncate text-xs font-medium">
-                          {item.title || `Image ${index + 1}`}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
-                          {index === 0 ? "Main image" : `Image ${index + 1}`}
-                        </p>
-                      </div>
-                      {index === 0 && (
-                        <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-[10px] font-medium shadow-sm backdrop-blur">
-                          <Star className="h-3 w-3 fill-current" />
-                          Main
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
           </section>

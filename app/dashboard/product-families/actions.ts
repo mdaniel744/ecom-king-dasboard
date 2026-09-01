@@ -279,20 +279,36 @@ function guessCondition(values: string[]): "new" | "used" | "refurbished" {
   return "new";
 }
 
-async function uniqueSlug(base: string, storeId: string): Promise<string> {
+async function getStoreProductSlugs(storeId: string): Promise<Set<string>> {
+  const slugs = new Set<string>();
+  const pageSize = 1_000;
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("products")
+      .select("slug")
+      .eq("store_id", storeId)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const page = data ?? [];
+    page.forEach((product) => slugs.add(product.slug));
+    if (page.length < pageSize) break;
+  }
+
+  return slugs;
+}
+
+function reserveUniqueSlug(base: string, usedSlugs: Set<string>) {
   let candidate = base;
   let suffix = 2;
-  for (;;) {
-    const { data } = await supabaseAdmin
-      .from("products")
-      .select("id")
-      .eq("store_id", storeId)
-      .eq("slug", candidate)
-      .maybeSingle();
-    if (!data) return candidate;
+  while (usedSlugs.has(candidate)) {
     candidate = `${base}-${suffix}`;
     suffix += 1;
   }
+  usedSlugs.add(candidate);
+  return candidate;
 }
 
 async function generateVariantsForFamily(
@@ -322,8 +338,8 @@ async function generateVariantsForFamily(
     .limit(1)
     .maybeSingle();
   const defaultCurrency = currencySample?.currency ?? "USD";
-
-  let created = 0;
+  const usedSlugs = await getStoreProductSlugs(store.id);
+  const newProducts: Array<Record<string, unknown>> = [];
   let skipped = 0;
 
   for (const combination of combinations) {
@@ -334,9 +350,9 @@ async function generateVariantsForFamily(
 
     const suffix = axisNames.map((name) => combination[name]).join(", ");
     const name = `${family.name} — ${suffix}`;
-    const slug = await uniqueSlug(slugify(name), store.id);
+    const slug = reserveUniqueSlug(slugify(name), usedSlugs);
 
-    const { error } = await supabaseAdmin.from("products").insert({
+    newProducts.push({
       store_id: store.id,
       family_id: family.id,
       category_id: family.category_id,
@@ -352,11 +368,14 @@ async function generateVariantsForFamily(
       image_alts: [],
       image_descriptions: [],
     });
-    if (error) throw error;
-    created += 1;
   }
 
-  return { created, skipped };
+  if (newProducts.length > 0) {
+    const { error } = await supabaseAdmin.from("products").insert(newProducts);
+    if (error) throw error;
+  }
+
+  return { created: newProducts.length, skipped };
 }
 
 function revalidateFamilyPages(familyId: string) {
@@ -407,6 +426,58 @@ export async function generateFamilyVariants(
 
     revalidateFamilyPages(familyId);
     return ok(result);
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+const bulkVariantActionSchema = z.object({
+  familyId: z.string().uuid(),
+  productIds: z.array(z.string().uuid()).min(1).max(500),
+  operation: z.enum(["draft", "delete"]),
+});
+
+export async function manageFamilyVariants(input: {
+  familyId: string;
+  productIds: string[];
+  operation: "draft" | "delete";
+}): Promise<ActionResult<{ affected: number }>> {
+  try {
+    const parsed = bulkVariantActionSchema.parse({
+      ...input,
+      productIds: Array.from(new Set(input.productIds)),
+    });
+    const store = await getCurrentStore();
+
+    const { data: family } = await supabaseAdmin
+      .from("product_families")
+      .select("id")
+      .eq("id", parsed.familyId)
+      .eq("store_id", store.id)
+      .maybeSingle();
+    if (!family) throw new Error("Product family not found.");
+
+    const query =
+      parsed.operation === "draft"
+        ? supabaseAdmin
+            .from("products")
+            .update({
+              status: "draft",
+              google_sync_status: "not_synced",
+              google_product_id: null,
+              google_sync_error: null,
+            })
+        : supabaseAdmin.from("products").delete();
+
+    const { data: affectedRows, error } = await query
+      .eq("store_id", store.id)
+      .eq("family_id", parsed.familyId)
+      .in("id", parsed.productIds)
+      .select("id");
+    if (error) throw error;
+
+    revalidateFamilyPages(parsed.familyId);
+    return ok({ affected: affectedRows?.length ?? 0 });
   } catch (err) {
     return toActionResult(err);
   }

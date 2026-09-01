@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
-import { FamilyVariantActions } from "@/app/dashboard/product-families/[id]/family-variant-actions";
+import { FamilyVariantList } from "@/app/dashboard/product-families/[id]/family-variant-list";
 import { ProductForm } from "@/app/dashboard/products/product-form";
 import { updateProduct } from "@/app/dashboard/products/actions";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
@@ -225,78 +225,7 @@ export default async function ProductFamilyDetailPage({
           </Button>
         </div>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-xl border bg-card">
-          {productList.map((product) => {
-            const missing = missingDetails(product);
-            return (
-              <div
-                key={product.id}
-                className="flex flex-col gap-4 border-b p-4 last:border-b-0 lg:flex-row lg:items-center"
-              >
-                <div className="flex min-w-0 flex-1 items-start gap-4">
-                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/30">
-                    {product.images?.[0] ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={product.images[0]}
-                        alt={product.image_alts?.[0] || ""}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold leading-snug">{product.name}</h3>
-                      <Badge variant={product.status === "active" ? "default" : "secondary"}>
-                        {product.status}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {product.sku ? `SKU: ${product.sku}` : "SKU not set"}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {Object.entries(product.attributes ?? {}).map(([attribute, value]) => (
-                        <Badge key={attribute} variant="outline" className="font-normal">
-                          {attribute}: {value}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <dl className="grid shrink-0 grid-cols-2 gap-x-6 gap-y-2 text-sm lg:min-w-[260px]">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Price</dt>
-                    <dd className="font-medium">{formatPrice(product)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Stock</dt>
-                    <dd className="font-medium">{product.stock_quantity ?? 0}</dd>
-                  </div>
-                  <div className="col-span-2 text-xs">
-                    {missing.length === 0 ? (
-                      <p className="font-medium text-emerald-700">Core product details complete</p>
-                    ) : (
-                      <p className="text-amber-700">
-                        <span className="font-medium">Needs product details:</span>{" "}
-                        {missing.join(", ")}
-                      </p>
-                    )}
-                  </div>
-                </dl>
-
-                <FamilyVariantActions
-                  productId={product.id}
-                  productName={product.name}
-                  currentFamilyId={typedFamily.id}
-                />
-              </div>
-            );
-          })}
-        </div>
+        <FamilyVariantList familyId={typedFamily.id} products={productList} />
       )}
     </div>
   );

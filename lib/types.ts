@@ -225,6 +225,9 @@ export type Product = {
   brand_id: string | null;
   /** Same idea as brand_id, for stores using structured Collections. */
   collection_id: string | null;
+  /** Clerk user id for a dealer-owned marketplace listing. Null means the
+   * store itself owns the listing. */
+  dealer_user_id: string | null;
   /** Optional link to a product_families row — null (the default, and every
    * product before this field existed) means this product is fully
    * standalone, exactly as it's always behaved. When set, the storefront
