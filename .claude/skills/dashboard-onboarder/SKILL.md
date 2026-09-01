@@ -12,14 +12,47 @@ When this skill runs, guide the user through the following phases in order. Ask 
 
 ## PART 1 — Dashboard Agent Side (your job)
 
+### Phase 0 — Discovery Relay to the Storefront Agent (do this first, before creating any account)
+
+If the new store already has a storefront/site agent working on its own codebase (this is the normal case, not the exception), send them a discovery relay prompt **before** creating the Clerk account or touching the database — their answers determine whether this store needs the Product Families/variant structure from day one, and surface integration gaps (rich text, RLS scoping, URL conventions) while they're still cheap to fix.
+
+**What's safe to hand them immediately, even before a `STORE_ID` exists:** the Supabase URL and anon key. These are one shared, publicly-embeddable credential for the entire platform (every live storefront already ships it client-side) — handing it over early lets the site agent start read-only schema exploration right away. **Never send the service-role key** — that one stays dashboard-only, always. `STORE_ID` genuinely doesn't exist yet at this point (see Phase B) — say so plainly rather than inventing a placeholder.
+
+**Copy-paste relay prompt** (fill in the store name, then send as-is):
+
+> Hi — I'm the dashboard-side engineering agent for Ecom King, a multi-tenant e-commerce backend. We're onboarding your site, **{{STORE_NAME}}**, onto it. Two systems work together: the dashboard (shared admin backend, our side) where the store owner manages products/prices/categories, and the storefront (your codebase) which reads from the same database.
+>
+> **Connection details you can start with:**
+> ```
+> Supabase URL: {{SUPABASE_URL}}
+> Supabase anon key: {{SUPABASE_ANON_KEY}}
+> ```
+> Shared across every tenant — safe client-side, but every query must filter by `store_id`. Your own `STORE_ID` doesn't exist yet (issued once the owner's account is created and they first log in) — you can still explore schema/RLS shape against real tables (`products`, `categories`, `attributes`, `attribute_values`, `translations`) in the meantime.
+>
+> Please answer:
+>
+> **1. Basic setup** — source language (what the owner writes in), target languages, live domain, Google Merchant Center status/IDs (fine if not ready yet).
+>
+> **2. Product catalog structure — the important one** — roughly how many products total? Is this a catalog where the *same physical item* comes in multiple sizes/conditions/colours? If yes: list the actual variant axes, and roughly how many *distinct base items* (families) vs. *total variant rows* that produces. Does your product page already have a size/condition/colour picker built — and if so, does it read a generic attributes object per product, or is it hardcoded to specific field names, or does it assume one shared URL per base item with variants switched via query string (WooCommerce-style)?
+>
+> **3. Rich text** — do product descriptions need formatting (bold, lists, tables)? `products.description` on our side is Tiptap-generated HTML, not plain text — flagging this now so it's built as sanitized HTML rendering (DOMPurify + `dangerouslySetInnerHTML`) from the start instead of a plain-string bug found later.
+>
+> **4. Existing content** — do you have real or placeholder/sample product data already built for your own testing? If yes, send it over (export, JSON, spreadsheet) — we'll use it as literal seed content in the dashboard instead of starting empty.
+>
+> **5. URL conventions** — exact URL word for product pages (and family/group pages if any), and whether the source language gets its own URL prefix or none.
+>
+> Reply with all of this and we'll create the account, wire up the dashboard, and send the full connection handoff with real credentials right after.
+
+**Why this order matters:** the variant-structure and rich-text answers directly change what gets built in Phase C/E below (whether Product Families gets used, whether attribute vocabulary needs a Condition/Size/Type split) — asking after content exists means redoing work. Missing the rich-text question specifically has caused a real bug before (a storefront rendering `<p>{product.description}</p>` as a raw string) — always ask it explicitly, don't wait for it to surface as a visible bug on a live site.
+
 ### Phase A — Account Creation
 
 The platform has no self-signup. Every account is created by the platform admin manually.
 
-1. Go to the **Clerk dashboard** → Users → **Create user**
-2. Enter the new store owner's email and set a password
-3. Hand them the dashboard URL + email + password directly
-4. No invitation from an existing store, no signup link needed
+1. Find the correct **production** Clerk app/instance first — run `clerk apps list --json` and pick the entry named "ecom dashboard" (not Kariv Glamour's separate dealer app), its `environment_type: "production"` instance. Using the wrong instance (e.g. the dev/keyless default) creates a login that won't work against the real deployed site.
+2. **Check the email isn't already a user in that instance** before creating — `clerk users list --email-address <email> --app <app_id> --instance <instance_id> --json`. This matters because one Clerk user can only own one store; reusing an email tied to a different store's owner silently logs into *that* store instead of creating a new one, rather than erroring.
+3. Create the user: `clerk users create --email <email> --password <generated> --app <app_id> --instance <instance_id> --yes --json` (dry-run first with `--dry-run`). Generate a strong random temporary password — don't ask the owner to pick one over chat.
+4. Hand them the dashboard URL + email + password directly. No invitation from an existing store, no signup link needed.
 
 ### Phase B — First Login and Store Provisioning
 
@@ -28,17 +61,32 @@ Once the store owner logs in for the first time:
 - A brand new empty store is created automatically just for them
 - It defaults to "My Store" — they rename it in Settings
 - They can see nothing from any other store — isolation is automatic
-- Background: system creates a `stores` row and a `store_members` row tied to their Clerk user ID
+- Background: system creates a `stores` row and a `store_members` row tied to their Clerk user ID (see `lib/get-current-store.ts` for the exact upsert logic)
+
+**If you need to hand the storefront agent a real `STORE_ID` before the owner has actually logged in** (common — the site agent is often ready to start wiring before the owner gets around to it), provision the rows yourself via SQL, mirroring `getCurrentStore()`'s logic exactly rather than inventing a different shape:
+
+```sql
+insert into stores (name, slug, owner_user_id)
+values ('<Store Name>', 'store-<8 random hex chars>', '<clerk_user_id>')
+returning id;
+
+insert into store_members (store_id, user_id, role)
+values ('<store id from above>', '<clerk_user_id>', 'owner');
+```
+
+This produces byte-for-byte the same result as the app's own first-login auto-provisioning — functionally identical, just not waiting on the owner's calendar. Feel free to also set the store's real name (instead of leaving "My Store") if you already know it, saving the owner a step.
 
 ### Phase C — Initial Configuration
 
-**Ask these questions before any content is created:**
+If you ran the Phase 0 discovery relay, most of these are already answered — cross-check rather than re-asking:
 
 1. What language will the store owner write all content in? *(source language — must match what they type)*
-2. What is the storefront domain? *(e.g. mystore.de)*
+2. What is the storefront domain? *(e.g. mystore.de)* — **this is a plain Settings field, not code.** It's used only for Google Merchant product links (`buildProductLink()`) and the storefront's own SEO tags (canonical/hreflang/og:url) — nothing in the dashboard codebase needs to be touched to set it, and nothing about the database connection depends on it being filled in yet.
 3. What other languages should the site support? *(target locales for DeepSeek translation)*
-4. Google Merchant Center account ID and data source ID? *(can be added later if not ready)*
+4. Google Merchant Center account ID and data source ID? *(can be added later if not ready — never a blocker for connecting the dashboard)*
 5. What niche/industry is this store? *(guides Attribute vocabulary recommendations)*
+6. **Product catalog structure** (from Phase 0's answer): does this store need **Product Families** (see the dedicated section in `CLAUDE.md`)? Decide now, before Phase E — if products are the same physical item in different sizes/conditions/colours, build the attribute vocabulary and family structure from the start rather than retrofitting after products already exist as unrelated standalone rows. If a family/variant mapping isn't obvious from the site agent's answer, work it out explicitly (e.g. "family = base item with size/type baked into the name; variant axis = whatever the site agent said actually toggles on their product page") and confirm it back to them before they build against it.
+7. **Real product count and Merchant readiness are never gating.** Don't wait to hear "47 products, ready to go" before creating the account or wiring the connection — the whole point of the dashboard is that the owner adds/edits this themselves, at any pace, after the connection exists. If the store is empty when the storefront agent first connects, that's the correct, expected state, not a problem to solve before handoff (see "Onboarding a new store" in `CLAUDE.md` for the fuller reasoning on this).
 
 **Settings to configure in the dashboard:**
 
@@ -62,6 +110,10 @@ This is safe to run multiple times. If it was already run, it does nothing.
 
 ### Phase E — Content Build Order
 
+**If the storefront being onboarded already has content — real inventory, or even placeholder/sample content the storefront agent built for their own testing — treat it as the source material for this phase, not something to leave for "later."** Explicitly ask the storefront agent to send the actual raw file/export (their sample data file — e.g. a `catalog.js`, JSON export, or spreadsheet — not just a description of what fields exist) as soon as it exists, and enter it into the dashboard as the initial attributes/categories/products rather than starting from a blank dashboard and waiting. A dashboard with zero products right after onboarding is not more "correct" than one seeded from the storefront's own existing content — it's just slower to get to something both sides can actually verify against, and seeing the storefront's real products land in the dashboard, editable, is the clearest possible confirmation the connection is genuinely live (not just plumbed). The owner can always edit or replace it afterward from the dashboard, same as any other content — this is a starting point, not a one-way door.
+
+If the storefront's content is deliberately fictional/placeholder (confirm this explicitly with whoever's driving the onboarding rather than assuming), still enter it as-is — it becomes the literal starting template the owner edits from, which is usually preferred over an empty state.
+
 Always in this order — each step depends on the previous:
 
 1. **Attributes first** — before products, because products reference attribute values. Create the niche-specific vocabulary (size, material, color, type, etc.). Enrich each attribute value with `label`, `image_url`, and `description` via the pencil icon if they will appear as visual cards on the storefront homepage.
@@ -71,6 +123,8 @@ Always in this order — each step depends on the previous:
    - Use **AI Suggest** on Google Product Category — DeepSeek picks the correct taxonomy path
    - Add at least one image URL, then use **Generate** on each image's alt text — critical for image SEO
    - Set status to **Active** only when price, image, and title are all filled — the form will block saving as Active otherwise
+
+**If Phase C decided this store needs Product Families**, build it in this order instead of hand-creating every row: create the attribute(s) that represent the actual variant axis/axes first (e.g. Condition: New/Used), create one family per distinct base item, then use **Generate Variants** (`/dashboard/product-families/[id]/generate`) to bulk-create the variant rows in one pass — check the boxes for the axis values that apply, confirm the live count matches what the site agent reported (e.g. "5 families → 9 variant rows"), then fill in whatever real/placeholder name, description, price, and images came from the seed content per generated draft row. This is faster and less error-prone than hand-creating each variant individually, and running it again later only creates newly-missing combinations.
 
 ### Phase F — Language Activation and Backfill
 
@@ -200,17 +254,25 @@ Invisible tags on every page telling Google the German and English versions are 
 
 ## Full Checklist
 
+**Phase 0 — before account creation:**
+- [ ] Sent discovery relay prompt to the storefront agent (languages, domain, Merchant status, product count/variant structure, rich text, existing content, URL conventions)
+- [ ] Decided whether this store needs Product Families based on their variant-structure answer
+- [ ] Confirmed with the site agent whether their product picker is already attribute-driven, hardcoded, or needs a rewrite to match our model
+
 **Dashboard side:**
-- [ ] Create Clerk user, hand over credentials
-- [ ] Store owner logs in — confirm store auto-provisioned
+- [ ] Identified the correct production Clerk app/instance (`clerk apps list`) — not the dev/keyless default
+- [ ] Confirmed the owner's email isn't already a Clerk user tied to a different store
+- [ ] Create Clerk user (dry-run first), hand over credentials
+- [ ] Store provisioned — either via real first login, or manually via SQL (see Phase B) if the storefront agent needs a `STORE_ID` before the owner logs in
 - [ ] Pull and note the store ID
 - [ ] Run SQL migration: `ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alts text[] NOT NULL DEFAULT '{}';`
 - [ ] Set source language in Settings → Content Language
-- [ ] Set domain in Settings → Store Profile (storefront domain, not dashboard domain)
+- [ ] Set domain in Settings → Store Profile (storefront domain, not dashboard domain) — plain Settings field, not a code change
 - [ ] Set Feed Label (market country code e.g. DE)
-- [ ] Create all Attributes for this niche; enrich values with label/image/description if needed
+- [ ] Create all Attributes for this niche; enrich values with label/image/description if needed; if Product Families applies, make sure the variant-axis attribute(s) are created before families
 - [ ] Create categories with image_url, description, is_featured, display_order, meta_title, meta_description
-- [ ] Enter all products in source language — for each: use Generate on MPN, AI Suggest on Google Product Category, Generate on each image alt text
+- [ ] If seed content was sent, enter it as real products/families (via Generate Variants if applicable) rather than leaving the dashboard empty
+- [ ] Otherwise, enter all products in source language — for each: use Generate on MPN, AI Suggest on Google Product Category, Generate on each image alt text
 - [ ] Tick target languages in Settings → Translation
 - [ ] Re-save all existing content once (backfill)
 - [ ] Verify translations table has rows for all entities in target locale
@@ -221,9 +283,13 @@ Invisible tags on every page telling Google the German and English versions are 
 - [ ] Build /[locale]/ URL routes
 - [ ] Wire language switcher to stores.enabled_locales
 - [ ] Add hreflang tags to all pages
+- [ ] Render `products.description` (and its translation rows) as sanitized HTML, not a raw string
+- [ ] If Product Families applies: picker reads `product.attributes.<axis>` and enumerates siblings by `family_id`, not hardcoded field names
+- [ ] `attribute_values` queries are always scoped through a store-scoped `attributes` query first, never queried directly unscoped (its RLS policy only checks referential existence, not tenant match)
 - [ ] Test: toggling language shows no source-language leakage
 - [ ] Test: filter sidebar shows translated attribute values
 - [ ] Test: original language site unchanged
+- [ ] Test: once real/seed products exist, family/variant picker actually renders and toggles correctly on the live site — verify this yourself, don't just trust the code review
 
 ---
 
