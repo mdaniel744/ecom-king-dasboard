@@ -249,6 +249,138 @@ export async function deleteProduct(productId: string): Promise<ActionResult> {
   }
 }
 
+const bulkCatalogActionSchema = z
+  .object({
+    productIds: z.array(z.string().uuid()).max(500),
+    familyIds: z.array(z.string().uuid()).max(500),
+    operation: z.enum(["draft", "delete"]),
+  })
+  .refine(({ productIds, familyIds }) => productIds.length + familyIds.length > 0, {
+    message: "Select at least one product.",
+  })
+  .refine(({ productIds, familyIds }) => productIds.length + familyIds.length <= 500, {
+    message: "You can manage up to 500 products at once.",
+  });
+
+export async function manageCatalogProducts(input: {
+  productIds: string[];
+  familyIds: string[];
+  operation: "draft" | "delete";
+}): Promise<ActionResult<{ affectedEntries: number; affectedProducts: number }>> {
+  try {
+    const parsed = bulkCatalogActionSchema.parse({
+      ...input,
+      productIds: Array.from(new Set(input.productIds)),
+      familyIds: Array.from(new Set(input.familyIds)),
+    });
+    const store = await getCurrentStore();
+
+    const [ownedProductsResult, ownedFamiliesResult] = await Promise.all([
+      parsed.productIds.length > 0
+        ? supabaseAdmin
+            .from("products")
+            .select("id")
+            .eq("store_id", store.id)
+            .in("id", parsed.productIds)
+        : Promise.resolve({ data: [], error: null }),
+      parsed.familyIds.length > 0
+        ? supabaseAdmin
+            .from("product_families")
+            .select("id")
+            .eq("store_id", store.id)
+            .in("id", parsed.familyIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (ownedProductsResult.error) throw ownedProductsResult.error;
+    if (ownedFamiliesResult.error) throw ownedFamiliesResult.error;
+
+    const productIds = (ownedProductsResult.data ?? []).map((row) => row.id);
+    const familyIds = (ownedFamiliesResult.data ?? []).map((row) => row.id);
+    let affectedProducts = 0;
+
+    if (parsed.operation === "draft") {
+      const draftUpdate = {
+        status: "draft" as const,
+        google_sync_status: "not_synced" as const,
+        google_product_id: null,
+        google_sync_error: null,
+      };
+
+      if (productIds.length > 0) {
+        const { data, error } = await supabaseAdmin
+          .from("products")
+          .update(draftUpdate)
+          .eq("store_id", store.id)
+          .in("id", productIds)
+          .select("id");
+        if (error) throw error;
+        affectedProducts += data?.length ?? 0;
+      }
+
+      if (familyIds.length > 0) {
+        const { data: variants, error: variantError } = await supabaseAdmin
+          .from("products")
+          .update(draftUpdate)
+          .eq("store_id", store.id)
+          .in("family_id", familyIds)
+          .select("id");
+        if (variantError) throw variantError;
+        affectedProducts += variants?.length ?? 0;
+
+        const { error: familyError } = await supabaseAdmin
+          .from("product_families")
+          .update({ status: "draft" })
+          .eq("store_id", store.id)
+          .in("id", familyIds);
+        if (familyError) throw familyError;
+      }
+    } else {
+      if (productIds.length > 0) {
+        const { data, error } = await supabaseAdmin
+          .from("products")
+          .delete()
+          .eq("store_id", store.id)
+          .in("id", productIds)
+          .select("id");
+        if (error) throw error;
+        affectedProducts += data?.length ?? 0;
+      }
+
+      if (familyIds.length > 0) {
+        const { data: variants, error: variantError } = await supabaseAdmin
+          .from("products")
+          .delete()
+          .eq("store_id", store.id)
+          .in("family_id", familyIds)
+          .select("id");
+        if (variantError) throw variantError;
+        affectedProducts += variants?.length ?? 0;
+
+        const { error: familyError } = await supabaseAdmin
+          .from("product_families")
+          .delete()
+          .eq("store_id", store.id)
+          .in("id", familyIds);
+        if (familyError) throw familyError;
+      }
+    }
+
+    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/product-families");
+    for (const familyId of familyIds) {
+      revalidatePath(`/dashboard/product-families/${familyId}`);
+    }
+
+    return ok({
+      affectedEntries: productIds.length + familyIds.length,
+      affectedProducts,
+    });
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
 /**
  * Builds a "Parent > Child" breadcrumb string from a category's lineage,
  * for Google's free-text productType field (distinct from the official
