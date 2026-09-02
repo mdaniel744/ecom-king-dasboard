@@ -35,12 +35,15 @@ export async function POST(request: NextRequest) {
 
   const { data: storeData } = await supabaseAdmin
     .from("stores")
-    .select("id, name, notification_email, notification_sender_name")
+    .select("id, name, notification_email, notification_sender_name, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from")
     .eq("id", order.store_id)
     .single();
   if (!storeData) return NextResponse.json({ error: "Store not found" }, { status: 404 });
 
-  const store = storeData as Pick<Store, "id" | "name" | "notification_email" | "notification_sender_name">;
+  const store = storeData as Pick<
+    Store,
+    "id" | "name" | "notification_email" | "notification_sender_name" | "smtp_host" | "smtp_port" | "smtp_user" | "smtp_pass" | "smtp_from"
+  >;
   const [invoiceSettings, paymentSettings] = await Promise.all([
     getInvoiceSettings(store),
     getPaymentSettings(store.id),

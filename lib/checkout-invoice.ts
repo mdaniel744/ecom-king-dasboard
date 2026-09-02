@@ -1,6 +1,6 @@
 import "server-only";
 
-import { sendMail } from "@/lib/mailer";
+import { sendMail, resolveStoreSmtp } from "@/lib/mailer";
 import { addressLines, formatOrderMoney } from "@/lib/checkout-order-display";
 import { defaultInvoiceSettings } from "@/lib/invoice-settings-defaults";
 import { defaultPaymentSettings } from "@/lib/payment-settings-defaults";
@@ -29,7 +29,10 @@ export function checkoutInvoiceNumber(
 
 export async function sendCheckoutInvoiceEmail(
   order: CheckoutOrder,
-  store: Pick<Store, "name" | "notification_sender_name" | "notification_email">,
+  store: Pick<
+    Store,
+    "name" | "notification_sender_name" | "notification_email" | "smtp_host" | "smtp_port" | "smtp_user" | "smtp_pass" | "smtp_from"
+  >,
   invoiceSettings?: InvoiceSettings,
   paymentSettings?: PaymentSettings
 ) {
@@ -108,6 +111,7 @@ export async function sendCheckoutInvoiceEmail(
   await sendMail({
     to: order.customer_email,
     fromName: store.notification_sender_name || store.name,
+    smtp: resolveStoreSmtp(store),
     subject: `Invoice ${invoiceNumber} for order ${order.order_number}`,
     html: `
       <div style="font-family:${fontFamily};max-width:720px;margin:0 auto;color:#111827;border:1px solid #e5e7eb;">

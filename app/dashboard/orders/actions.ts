@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { sendMail } from "@/lib/mailer";
+import { sendMail, resolveStoreSmtp } from "@/lib/mailer";
 import { getKarivUsersByIds } from "@/lib/kariv-clerk";
 import { notifyUser } from "@/lib/notifications";
 import { stripHtml } from "@/lib/html";
@@ -178,6 +178,7 @@ async function sendOrderMessage(
         await sendMail({
           to: recipientEmail,
           fromName: store.notification_sender_name || store.name,
+          smtp: resolveStoreSmtp(store),
           subject: fields.subject || `Message about your order — ${store.name}`,
           html: `<div style="font-family: sans-serif; max-width: 560px;">${makeEmailSafeHtml(fields.message)}</div>`,
         });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { sendMail } from "@/lib/mailer";
+import { sendMail, resolveStoreSmtp } from "@/lib/mailer";
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-webhook-secret");
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const { data: store } = await supabaseAdmin
     .from("stores")
-    .select("name, notification_email, notification_sender_name")
+    .select("name, notification_email, notification_sender_name, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from")
     .eq("id", inquiry.store_id)
     .single();
   if (!store?.notification_email) return NextResponse.json({ ok: true });
@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     await sendMail({
       to: store.notification_email,
       fromName: store.notification_sender_name || store.name,
+      smtp: resolveStoreSmtp(store),
       subject: `New inquiry${productName ? ` — ${productName}` : ""} — ${store.name}`,
       html: `
         <div style="font-family: sans-serif; max-width: 480px;">

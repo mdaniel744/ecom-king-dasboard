@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { sendMail } from "@/lib/mailer";
+import { sendMail, resolveStoreSmtp } from "@/lib/mailer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Store } from "@/lib/types";
 
@@ -41,6 +41,11 @@ type NotificationStore = Pick<
   | "name"
   | "notification_email"
   | "notification_sender_name"
+  | "smtp_host"
+  | "smtp_port"
+  | "smtp_user"
+  | "smtp_pass"
+  | "smtp_from"
   | StoreNotificationPreference
 >;
 
@@ -165,7 +170,7 @@ export async function POST(request: NextRequest) {
   const { data: storeData, error: storeError } = await supabaseAdmin
     .from("stores")
     .select(
-      "id, name, notification_email, notification_sender_name, notify_inquiries, notify_checkout_orders, notify_escrow_orders"
+      "id, name, notification_email, notification_sender_name, notify_inquiries, notify_checkout_orders, notify_escrow_orders, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from"
     )
     .eq("id", storeId)
     .single();
@@ -189,6 +194,7 @@ export async function POST(request: NextRequest) {
     await sendMail({
       to: store.notification_email,
       fromName: store.notification_sender_name || store.name,
+      smtp: resolveStoreSmtp(store),
       subject: `${details.heading}: ${details.reference} — ${store.name}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 620px; color: #18181b;">

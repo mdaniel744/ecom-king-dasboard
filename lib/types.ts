@@ -69,6 +69,21 @@ export type Store = {
    * Falls back to `name` when unset — every store gets a branded sender,
    * not the generic platform name, without needing to fill this in. */
   notification_sender_name: string | null;
+  /** Per-store outbound email override -- when all four of host/port/user/pass
+   * are set, notification/invoice emails for this store send through this
+   * store's own mailbox (e.g. Neo Mail, Hostinger email, whatever the store
+   * owner set up on their own domain) instead of the platform's shared
+   * mailbox. smtp_from optionally overrides the literal From address;
+   * without it, smtp_user is used. Any store missing even one of
+   * host/port/user/pass falls back entirely to the shared SMTP_* env vars --
+   * see resolveStoreSmtp in lib/mailer.ts. smtp_pass is a real secret, never
+   * exposed beyond the server-role client (see stores' column-level anon
+   * grant, which does not include it). */
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_user: string | null;
+  smtp_pass: string | null;
+  smtp_from: string | null;
   /** Admin email preferences for the three distinct storefront submission
    * paths. The destination tables remain separate regardless of whether an
    * email is enabled. */
