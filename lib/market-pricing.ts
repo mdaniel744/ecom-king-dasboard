@@ -1,5 +1,6 @@
 import "server-only";
 
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { defaultCurrencyForMarket } from "@/lib/merchant-locales";
 import type { Store } from "@/lib/types";
 
@@ -7,6 +8,11 @@ const ECB_REFERENCE_RATES_URL =
   "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A?lastNObservations=1&format=csvdata";
 const RATE_CACHE_SECONDS = 60 * 60;
 const MAX_RATE_AGE_MS = 10 * 24 * 60 * 60 * 1000;
+// How old our own cached rates can get before a request opportunistically
+// kicks off a background refresh for next time -- deliberately shorter than
+// RATE_CACHE_SECONDS so a refresh is already in flight before the row would
+// be considered stale by anything reading fetched_at directly.
+const REFRESH_STALE_AFTER_MS = 50 * 60 * 1000;
 
 export class CurrencyConversionError extends Error {}
 
@@ -110,6 +116,88 @@ async function getEcbReferenceRates(): Promise<EcbReferenceRates> {
   return { rates, observedAt };
 }
 
+/**
+ * Fetches live rates from ECB and writes them into our own cache table.
+ * Never called from a customer-facing request path directly -- only from
+ * getCachedEcbReferenceRates()'s background refresh (fire-and-forget) or its
+ * one-time bootstrap path (cache table genuinely empty). Errors are swallowed
+ * by the caller when fired in the background; the caller awaiting bootstrap
+ * lets them propagate, since there's nothing to fall back to that first time.
+ */
+async function refreshExchangeRateCache(): Promise<EcbReferenceRates> {
+  const snapshot = await getEcbReferenceRates();
+  const rows = Object.entries(snapshot.rates).map(([currency, rate]) => ({
+    currency,
+    rate,
+    observed_at: snapshot.observedAt[currency] ?? snapshot.observedAt.EUR,
+  }));
+  const { error } = await supabaseAdmin.from("exchange_rate_cache").upsert(rows, { onConflict: "currency" });
+  if (error) throw new CurrencyConversionError(`Failed to update the exchange rate cache: ${error.message}`);
+  return snapshot;
+}
+
+let refreshInFlight: Promise<EcbReferenceRates> | null = null;
+
+/** De-dupes concurrent background refresh triggers -- several requests
+ * noticing a stale cache in the same moment should kick off one real ECB
+ * call, not one per request. */
+function triggerBackgroundRefresh(): void {
+  if (refreshInFlight) return;
+  refreshInFlight = refreshExchangeRateCache()
+    .catch((error) => {
+      // Deliberately swallowed -- a background refresh failing must never
+      // surface to (or block) whatever customer request triggered it. The
+      // cache just stays at its last known-good value until the next
+      // opportunistic trigger succeeds.
+      console.error("Background exchange rate refresh failed:", error);
+      return null as unknown as EcbReferenceRates;
+    })
+    .finally(() => {
+      refreshInFlight = null;
+    });
+}
+
+/**
+ * The only rate source the customer-facing pricing/checkout path should ever
+ * call. Always reads our own cache table (a single indexed query, no
+ * network round trip to ECB) -- so a request is never blocked by ECB being
+ * slow, which is the whole reason this cache exists (see the 13s cold-fetch
+ * latency that broke a real Olborg checkout).
+ *
+ * Bootstrap case (cache table has no rows at all yet, e.g. right after this
+ * migration ran) does one real, synchronous ECB fetch so the very first
+ * request isn't left with nothing -- every request after that reads the
+ * cache. Otherwise, returns whatever's cached immediately and, if it's
+ * older than REFRESH_STALE_AFTER_MS, kicks off a background refresh without
+ * waiting for it -- this request still uses the (still valid, just not
+ * freshly-verified) cached value.
+ */
+async function getCachedEcbReferenceRates(): Promise<EcbReferenceRates> {
+  const { data, error } = await supabaseAdmin
+    .from("exchange_rate_cache")
+    .select("currency, rate, observed_at, fetched_at");
+  if (error) throw new CurrencyConversionError(`Exchange rate cache could not be read: ${error.message}`);
+
+  if (!data || data.length === 0) {
+    return refreshExchangeRateCache();
+  }
+
+  const rates: Record<string, number> = {};
+  const observedAt: Record<string, string> = {};
+  let oldestFetch = Infinity;
+  for (const row of data) {
+    rates[row.currency] = Number(row.rate);
+    observedAt[row.currency] = row.observed_at;
+    oldestFetch = Math.min(oldestFetch, new Date(row.fetched_at).getTime());
+  }
+
+  if (Date.now() - oldestFetch > REFRESH_STALE_AFTER_MS) {
+    triggerBackgroundRefresh();
+  }
+
+  return { rates, observedAt };
+}
+
 function roundForCurrency(amount: number, currency: string): number {
   let digits = 2;
   try {
@@ -175,7 +263,7 @@ export async function createMarketPriceConverter(
   const needsConversion = sourceCurrencies.some(
     (currency) => currency.trim().toUpperCase() !== target
   );
-  const snapshot = needsConversion ? await getEcbReferenceRates() : null;
+  const snapshot = needsConversion ? await getCachedEcbReferenceRates() : null;
 
   return {
     market: normalizedMarket,
