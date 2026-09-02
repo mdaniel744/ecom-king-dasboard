@@ -52,6 +52,16 @@ export type Store = {
    * default, since the correct rate genuinely varies by destination country
    * and nobody should get a silently-wrong price the moment this shipped. */
   vat_rates: Record<string, number>;
+  /** ISO 4217 display currency for each delivery market, e.g.
+   * {"DE":"EUR","PL":"PLN"}. When a market is configured, product
+   * prices are converted from the product's stored currency before that
+   * market's VAT is applied. Missing keys use that country's default
+   * currency until the administrator saves an explicit selection. */
+  market_currencies: Record<string, string>;
+  /** Maps the storefront language switcher value to a delivery market, e.g.
+   * {"de":"DE","pl":"PL"}. This lets a locale change select the right
+   * currency and VAT without guessing for languages shared by countries. */
+  locale_markets: Record<string, string>;
   /** Where new inquiry, standard-order, and protected-order staff alerts are
    * sent. Null until the store owner sets it in Settings. */
   notification_email: string | null;

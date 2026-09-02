@@ -7,7 +7,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validate } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { checkProductLinks, type LinkCheckResult } from "@/lib/google-merchant";
+import { defaultCurrencyForMarket, FEED_LABEL_OPTIONS } from "@/lib/merchant-locales";
 import type { Product } from "@/lib/types";
+
+const DELIVERY_MARKET_CODES = new Set(FEED_LABEL_OPTIONS.map((option) => option.value));
 
 const googleMerchantSchema = z.object({
   googleMerchantId: z.string().trim().max(100).nullable(),
@@ -32,6 +35,14 @@ const deliveryMarketsSchema = z.object({
     z.string().trim().min(1).max(100).regex(/^[a-z0-9-]+$/i, "Use only letters, numbers, and hyphens")
   ),
   vatRates: z.record(z.string(), z.number().min(0).max(100)),
+  marketCurrencies: z.record(
+    z.string(),
+    z.string().regex(/^[A-Z]{3}$/, "Choose a valid three-letter currency code")
+  ),
+  localeMarkets: z.record(
+    z.string().regex(/^[a-z]{2,3}(?:-[a-z0-9]+)*$/i, "Choose a valid storefront locale"),
+    z.string().regex(/^[A-Z]{2}$/, "Choose a valid delivery market")
+  ),
 });
 
 export async function updateGoogleMerchantSettings(formData: FormData): Promise<ActionResult> {
@@ -112,17 +123,41 @@ export async function testProductLinks(): Promise<ActionResult<LinkCheckResult[]
 export async function updateDeliveryMarketSettings(formData: FormData): Promise<ActionResult> {
   try {
     const store = await getCurrentStore();
-    const googleFeedLabelsRaw = formData.getAll("google_feed_labels") as string[];
+    const googleFeedLabelsRaw = (formData.getAll("google_feed_labels") as string[]).filter(
+      (market) => DELIVERY_MARKET_CODES.has(market)
+    );
     const googleFeedLabelRaw = googleFeedLabelsRaw[0] || store.google_feed_label || "US";
     const productUrlPathRaw = (formData.get("product_url_path") as string)?.trim() || "products";
 
     const vatRatesRaw: Record<string, number> = {};
+    const marketCurrenciesRaw: Record<string, string> = {};
+    const localeMarketsRaw: Record<string, string> = {};
+    const availableLocales = [
+      store.google_content_language.toLowerCase(),
+      ...(store.enabled_locales ?? []).map((locale) => locale.toLowerCase()),
+    ];
     for (const market of googleFeedLabelsRaw) {
+      if (!DELIVERY_MARKET_CODES.has(market)) continue;
+
+      const currency =
+        (formData.get(`market_currency_${market}`) as string)?.trim().toUpperCase() ||
+        defaultCurrencyForMarket(market);
+      marketCurrenciesRaw[market] = currency;
+
       const raw = (formData.get(`vat_rate_${market}`) as string)?.trim();
       if (!raw) continue;
       const parsed = Number(raw);
       if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
         vatRatesRaw[market] = parsed;
+      }
+    }
+
+    for (const locale of new Set(availableLocales)) {
+      const market = (formData.get(`locale_market_${locale}`) as string)
+        ?.trim()
+        .toUpperCase();
+      if (market && market !== "__UNLINKED" && googleFeedLabelsRaw.includes(market)) {
+        localeMarketsRaw[locale] = market;
       }
     }
 
@@ -139,6 +174,8 @@ export async function updateDeliveryMarketSettings(formData: FormData): Promise<
       sourceLocaleHasPrefix: formData.get("source_locale_has_prefix") === "on",
       productUrlPathOverrides: productUrlPathOverridesRaw,
       vatRates: vatRatesRaw,
+      marketCurrencies: marketCurrenciesRaw,
+      localeMarkets: localeMarketsRaw,
     });
 
     const { error } = await supabaseAdmin
@@ -150,6 +187,8 @@ export async function updateDeliveryMarketSettings(formData: FormData): Promise<
         source_locale_has_prefix: values.sourceLocaleHasPrefix,
         product_url_path_overrides: values.productUrlPathOverrides,
         vat_rates: values.vatRates,
+        market_currencies: values.marketCurrencies,
+        locale_markets: values.localeMarkets,
       })
       .eq("id", store.id);
 

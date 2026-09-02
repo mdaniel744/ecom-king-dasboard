@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Product, ProductCondition, Store } from "@/lib/types";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
 import { stripHtml } from "@/lib/html";
+import { convertPriceForMarket } from "@/lib/market-pricing";
 
 const MERCHANT_API_BASE = "https://merchantapi.googleapis.com/products/v1";
 
@@ -254,21 +255,7 @@ export async function checkProductLinks(store: Store, product: Product): Promise
   return results;
 }
 
-/**
- * Product prices are always stored VAT-exclusive (net) -- see
- * stores.vat_rates doc comment. Adds this market's configured VAT rate, if
- * any, and rounds to 2 decimal places before the caller converts to micros,
- * so the submitted price is a clean currency amount rather than carrying
- * floating-point remainder digits. A market with no rate configured returns
- * the price unchanged (opt-in, not a platform default).
- */
-export function applyVat(price: number, market: string, store: Store): number {
-  const rate = store.vat_rates?.[market];
-  if (!rate) return price;
-  return Math.round(price * (1 + rate / 100) * 100) / 100;
-}
-
-function buildProductInput(
+async function buildProductInput(
   store: Store,
   product: Product,
   locale: string,
@@ -289,6 +276,12 @@ function buildProductInput(
   // together. Brand alone is not sufficient (real-world feeds we compared
   // against use brand+MPN with no GTIN at all, which is what this matches).
   const hasIdentifier = Boolean(product.gtin || (product.brand && product.mpn));
+  const [marketPrice, marketSalePrice] = await Promise.all([
+    convertPriceForMarket(product.price!, product.currency, feedLabel, store),
+    product.sale_price
+      ? convertPriceForMarket(product.sale_price, product.currency, feedLabel, store)
+      : Promise.resolve(null),
+  ]);
 
   return {
     offerId: product.id,
@@ -309,13 +302,13 @@ function buildProductInput(
       // family share a real itemGroupId with their siblings.
       itemGroupId: product.family_id ?? undefined,
       price: {
-        amountMicros: String(Math.round(applyVat(product.price!, feedLabel, store) * 1_000_000)),
-        currencyCode: product.currency,
+        amountMicros: String(Math.round(marketPrice.amount * 1_000_000)),
+        currencyCode: marketPrice.currency,
       },
-      salePrice: product.sale_price
+      salePrice: marketSalePrice
         ? {
-            amountMicros: String(Math.round(applyVat(product.sale_price, feedLabel, store) * 1_000_000)),
-            currencyCode: product.currency,
+            amountMicros: String(Math.round(marketSalePrice.amount * 1_000_000)),
+            currencyCode: marketSalePrice.currency,
           }
         : undefined,
       brand: product.brand ?? undefined,
@@ -369,7 +362,7 @@ export async function upsertGoogleProduct(
     for (const locale of locales) {
       const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
       try {
-        const body = buildProductInput(store, product, locale, feedLabel, text, productType);
+        const body = await buildProductInput(store, product, locale, feedLabel, text, productType);
         const res = await client.request({
           url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs:insert?dataSource=${encodeURIComponent(dataSource)}`,
           method: "POST",

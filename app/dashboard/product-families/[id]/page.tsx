@@ -11,6 +11,7 @@ import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { FamilyVariantList } from "@/app/dashboard/product-families/[id]/family-variant-list";
 import { ProductForm } from "@/app/dashboard/products/product-form";
 import { updateProduct } from "@/app/dashboard/products/actions";
+import { getPrimaryStoreCurrency, getStoreMarketPricing } from "@/lib/merchant-locales";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
 
 function formatPrice(product: Product) {
@@ -192,6 +193,8 @@ export default async function ProductFamilyDetailPage({
             attributeDefs={attributeDefs}
             storeSourceLocale={store.google_content_language}
             enabledLocales={store.enabled_locales}
+            defaultCurrency={getPrimaryStoreCurrency(store)}
+            marketPricing={getStoreMarketPricing(store)}
             backHref={familyHref}
             successHref={familyHref}
             heading={`Edit variation · ${selectedProduct.name}`}

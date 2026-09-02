@@ -9,6 +9,7 @@ import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { syncTranslations } from "@/lib/translation-sync";
 import { getAttributeDefs } from "@/lib/attribute-defs";
+import { getPrimaryStoreCurrency } from "@/lib/merchant-locales";
 import type { ProductFamily, Store } from "@/lib/types";
 
 const familyFieldsSchema = z.object({
@@ -337,7 +338,7 @@ async function generateVariantsForFamily(
     .eq("family_id", family.id)
     .limit(1)
     .maybeSingle();
-  const defaultCurrency = currencySample?.currency ?? "USD";
+  const defaultCurrency = currencySample?.currency ?? getPrimaryStoreCurrency(store);
   const usedSlugs = await getStoreProductSlugs(store.id);
   const newProducts: Array<Record<string, unknown>> = [];
   let skipped = 0;

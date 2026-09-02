@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildProductLink, getTranslationsByLocale, applyVat } from "@/lib/google-merchant";
+import { buildProductLink, getTranslationsByLocale } from "@/lib/google-merchant";
+import { convertPriceForMarket } from "@/lib/market-pricing";
 import type { Product, Store } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function GET(
   const { data: store } = await supabaseAdmin
     .from("stores")
     .select(
-      "id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path, product_url_path_overrides, source_locale_has_prefix, vat_rates"
+      "id, name, domain, google_content_language, google_feed_label, google_feed_labels, product_url_path, product_url_path_overrides, source_locale_has_prefix, vat_rates, market_currencies"
     )
     .eq("id", storeId)
     .maybeSingle();
@@ -86,6 +87,12 @@ export async function GET(
       const hasIdentifier = Boolean(p.brand && p.mpn);
       const productType = breadcrumb(p.category_id);
       const additionalImages = (p.images ?? []).slice(1, 10);
+      const [marketPrice, marketSalePrice] = await Promise.all([
+        convertPriceForMarket(p.price!, p.currency, market, store as Store),
+        p.sale_price
+          ? convertPriceForMarket(p.sale_price, p.currency, market, store as Store)
+          : Promise.resolve(null),
+      ]);
 
       return `
   <item>
@@ -99,8 +106,8 @@ export async function GET(
     <g:image_link>${escapeXml(p.images[0])}</g:image_link>
     <g:condition>${p.condition}</g:condition>
     <g:availability>${p.status === "active" ? "in_stock" : "out_of_stock"}</g:availability>
-    <g:price>${escapeXml(formatPrice(applyVat(p.price!, market, store as Store), p.currency))}</g:price>
-    ${p.sale_price ? `<g:sale_price>${escapeXml(formatPrice(applyVat(p.sale_price, market, store as Store), p.currency))}</g:sale_price>` : ""}
+    <g:price>${escapeXml(formatPrice(marketPrice.amount, marketPrice.currency))}</g:price>
+    ${marketSalePrice ? `<g:sale_price>${escapeXml(formatPrice(marketSalePrice.amount, marketSalePrice.currency))}</g:sale_price>` : ""}
     ${p.mpn ? `<g:mpn>${escapeXml(p.mpn)}</g:mpn>` : "<g:mpn/>"}
     ${p.brand ? `<g:brand>${escapeXml(p.brand)}</g:brand>` : ""}
     <g:canonical_link>${escapeXml(link)}</g:canonical_link>

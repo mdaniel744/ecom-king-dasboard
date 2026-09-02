@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, Plus, ShoppingCart, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Globe2, Loader2, Plus, ShoppingCart, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,11 +27,13 @@ import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
+import type { MarketPricingSetting } from "@/lib/merchant-locales";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
 import { ProductMediaManager } from "./product-media-manager";
+import { previewMarketPrices, type MarketPricePreview } from "./actions";
 import { stripHtml } from "@/lib/html";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
@@ -46,6 +48,8 @@ type Props = {
   attributeDefs: AttributeDef[];
   storeSourceLocale?: string;
   enabledLocales?: string[];
+  defaultCurrency?: string;
+  marketPricing?: MarketPricingSetting[];
   backHref?: string;
   successHref?: string;
   heading?: string;
@@ -61,6 +65,8 @@ export function ProductForm({
   attributeDefs,
   storeSourceLocale = "en",
   enabledLocales = [],
+  defaultCurrency = "USD",
+  marketPricing = [],
   backHref = "/dashboard/products",
   successHref,
   heading,
@@ -69,6 +75,11 @@ export function ProductForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [price, setPrice] = useState(product?.price?.toString() ?? "");
+  const [currency, setCurrency] = useState(product?.currency ?? defaultCurrency);
+  const [marketPricePreviews, setMarketPricePreviews] = useState<MarketPricePreview[]>([]);
+  const [marketPriceError, setMarketPriceError] = useState<string | null>(null);
+  const [isLoadingMarketPrices, setIsLoadingMarketPrices] = useState(false);
 
   const [isFamilyMember, setIsFamilyMember] = useState(!!product?.family_id);
   const [selectedFamilyId, setSelectedFamilyId] = useState(product?.family_id ?? "");
@@ -91,6 +102,61 @@ export function ProductForm({
   const [isSuggestingCategory, setIsSuggestingCategory] = useState(false);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState(product?.category_id ?? "");
+
+  const marketPricingKey = useMemo(
+    () => marketPricing.map((item) => `${item.market}:${item.currency}:${item.vatRate}`).join("|"),
+    [marketPricing]
+  );
+  const prioritizedCurrencyOptions = useMemo(() => {
+    const optionsByCode = new Map(CURRENCY_OPTIONS.map((option) => [option.value, option]));
+    const preferredCodes = [
+      ...marketPricing.map((item) => item.currency.toUpperCase()),
+      product?.currency?.toUpperCase(),
+      defaultCurrency.toUpperCase(),
+    ].filter((code): code is string => Boolean(code));
+    const uniquePreferredCodes = [...new Set(preferredCodes)];
+
+    return [
+      ...uniquePreferredCodes.map(
+        (code) => optionsByCode.get(code) ?? { value: code, label: code }
+      ),
+      ...CURRENCY_OPTIONS.filter((option) => !uniquePreferredCodes.includes(option.value)),
+    ];
+  }, [defaultCurrency, marketPricing, product?.currency]);
+  const shouldPreviewMarketPrices = marketPricing.some(
+    (item) => item.currency !== currency || item.vatRate > 0
+  );
+
+  useEffect(() => {
+    const numericPrice = Number(price);
+    if (!shouldPreviewMarketPrices || !Number.isFinite(numericPrice) || numericPrice <= 0) {
+      setMarketPricePreviews([]);
+      setMarketPriceError(null);
+      setIsLoadingMarketPrices(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      setIsLoadingMarketPrices(true);
+      setMarketPriceError(null);
+      const result = await previewMarketPrices({ price: numericPrice, currency });
+      if (cancelled) return;
+
+      if (result.success) {
+        setMarketPricePreviews(result.data);
+      } else {
+        setMarketPricePreviews([]);
+        setMarketPriceError(result.error);
+      }
+      setIsLoadingMarketPrices(false);
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [currency, marketPricingKey, price, shouldPreviewMarketPrices]);
 
   const initialAttrs = product?.attributes ? Object.entries(product.attributes) : [];
   const [attrs, setAttrs] = useState<[string, string][]>(
@@ -476,7 +542,8 @@ export function ProductForm({
                     type="number"
                     step="0.01"
                     required
-                    defaultValue={product?.price ?? ""}
+                    value={price}
+                    onChange={(event) => setPrice(event.target.value)}
                   />
                   <FieldError name="price" errors={fieldErrors} />
                 </div>
@@ -485,15 +552,15 @@ export function ProductForm({
                     <Label htmlFor="currency">Currency</Label>
                     <FieldInfo
                       title="Currency"
-                      description="The 3-letter currency code for this product's price (e.g. EUR for Euros, USD for US Dollars, GBP for British Pounds). Must match the currency your storefront actually charges in."
+                      description="The base currency used when entering this product's price. New products automatically start with the first currency configured under Delivery Markets, so you normally do not need to search this list. Other selected market currencies are calculated automatically below using the latest available reference rate and that market's VAT."
                     />
                   </div>
-                  <Select name="currency" defaultValue={product?.currency ?? "USD"}>
+                  <Select name="currency" value={currency} onValueChange={setCurrency}>
                     <SelectTrigger id="currency">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {CURRENCY_OPTIONS.map((option) => (
+                      {prioritizedCurrencyOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -522,6 +589,60 @@ export function ProductForm({
                 />
                 <FieldError name="sale_price" errors={fieldErrors} />
               </div>
+
+              {shouldPreviewMarketPrices && (
+                <div className="rounded-lg border bg-muted/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <span className="mt-0.5 rounded-md bg-primary/10 p-1.5 text-primary">
+                        <Globe2 className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">Automatic market prices</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          Latest available reference-rate conversion, followed by each market&apos;s
+                          configured VAT.
+                        </p>
+                      </div>
+                    </div>
+                    {isLoadingMarketPrices && (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+
+                  {marketPriceError ? (
+                    <p className="mt-3 text-xs text-destructive">{marketPriceError}</p>
+                  ) : marketPricePreviews.length > 0 ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {marketPricePreviews.map((preview) => (
+                        <div
+                          key={preview.market}
+                          className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
+                        >
+                          <div>
+                            <p className="text-xs font-semibold">{preview.market}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {preview.vatRate > 0
+                                ? `${preview.vatRate}% VAT included`
+                                : "No VAT added"}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold">
+                            {new Intl.NumberFormat("en", {
+                              style: "currency",
+                              currency: preview.currency,
+                            }).format(preview.amount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Enter a price to preview the customer price in every selected market.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">

@@ -14,6 +14,8 @@ import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules
 import { validate, validateId } from "@/lib/validation";
 import { syncTranslations } from "@/lib/translation-sync";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
+import { convertPriceForMarket, CurrencyConversionError } from "@/lib/market-pricing";
+import { getStoreMarketPricing } from "@/lib/merchant-locales";
 import type { Product, ProductCondition, ProductStatus, Store } from "@/lib/types";
 
 const productPayloadSchema = z.object({
@@ -192,6 +194,41 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     }
     return ok();
   } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+const marketPricePreviewSchema = z.object({
+  price: z.number().finite().positive().max(1_000_000_000_000),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
+});
+
+export type MarketPricePreview = {
+  market: string;
+  amount: number;
+  currency: string;
+  vatRate: number;
+};
+
+export async function previewMarketPrices(input: {
+  price: number;
+  currency: string;
+}): Promise<ActionResult<MarketPricePreview[]>> {
+  try {
+    const values = marketPricePreviewSchema.parse(input);
+    const store = await getCurrentStore();
+    const configuredMarkets = getStoreMarketPricing(store);
+    const previews = await Promise.all(
+      configuredMarkets.map(async ({ market }) => ({
+        market,
+        ...(await convertPriceForMarket(values.price, values.currency, market, store)),
+      }))
+    );
+    return ok(previews);
+  } catch (err) {
+    if (err instanceof CurrencyConversionError) {
+      return { success: false, error: err.message, fieldErrors: {} };
+    }
     return toActionResult(err);
   }
 }

@@ -22,12 +22,54 @@ import {
   updateDeliveryMarketSettings,
   updateGoogleMerchantSettings,
 } from "@/app/dashboard/market/actions";
-import { CONTENT_LANGUAGE_OPTIONS, FEED_LABEL_OPTIONS } from "@/lib/merchant-locales";
+import {
+  CONTENT_LANGUAGE_OPTIONS,
+  FEED_LABEL_OPTIONS,
+  defaultCurrencyForMarket,
+  defaultLocaleForMarket,
+} from "@/lib/merchant-locales";
+import { CURRENCY_OPTIONS } from "@/lib/currencies";
 import { FieldInfo } from "@/components/ui/field-info";
 import type { Store } from "@/lib/types";
 import type { LinkCheckResult } from "@/lib/google-merchant";
 
 type ParsedProductUrl = { word: string; detectedLocale: string | null; isSourceLocale: boolean };
+
+function initialLocaleMarketSelection(
+  store: Store,
+  markets: string[],
+  availableLocales: string[]
+): Record<string, string> {
+  const byLocale: Record<string, string> = {};
+
+  for (const [locale, market] of Object.entries(store.locale_markets ?? {})) {
+    if (markets.includes(market) && availableLocales.includes(locale)) {
+      byLocale[locale] = market;
+    }
+  }
+
+  for (const locale of availableLocales) {
+    if (byLocale[locale]) continue;
+    if (markets.length === 1) {
+      byLocale[locale] = markets[0];
+      continue;
+    }
+    const matchingMarket = markets.find(
+      (market) => defaultLocaleForMarket(market, availableLocales) === locale
+    );
+    if (matchingMarket) {
+      byLocale[locale] = matchingMarket;
+    }
+  }
+
+  const primaryMarket = markets[0];
+  const sourceLocale = store.google_content_language.toLowerCase();
+  if (primaryMarket && !byLocale[sourceLocale]) {
+    byLocale[sourceLocale] = primaryMarket;
+  }
+
+  return byLocale;
+}
 
 /**
  * Extracts Product Page Word (and, when possible, a source-locale-prefix
@@ -120,8 +162,18 @@ export function SettingsForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [enabledLocales, setEnabledLocales] = useState<string[]>(store.enabled_locales ?? []);
-  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(
-    store.google_feed_labels?.length ? store.google_feed_labels : [store.google_feed_label]
+  const configuredMarkets = store.google_feed_labels?.length
+    ? store.google_feed_labels
+    : [store.google_feed_label];
+  const availableStorefrontLocales = Array.from(
+    new Set([
+      store.google_content_language.toLowerCase(),
+      ...(store.enabled_locales ?? []).map((locale) => locale.toLowerCase()),
+    ])
+  );
+  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(configuredMarkets);
+  const [localeMarkets, setLocaleMarkets] = useState<Record<string, string>>(() =>
+    initialLocaleMarketSelection(store, configuredMarkets, availableStorefrontLocales)
   );
   const [pasteUrl, setPasteUrl] = useState("");
   const [pasteFeedback, setPasteFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
@@ -169,6 +221,41 @@ export function SettingsForm({
     setPasteFeedback({
       kind: "success",
       text: `Detected "${result.detectedLocale}" → set its word exception to "${result.word}" below, without touching the main word above (which still applies to every other language).`,
+    });
+  }
+
+  function handleMarketToggle(market: string, checked: boolean) {
+    const nextMarkets = checked
+      ? selectedMarkets.includes(market)
+        ? selectedMarkets
+        : [...selectedMarkets, market]
+      : selectedMarkets.filter((selectedMarket) => selectedMarket !== market);
+    setSelectedMarkets(nextMarkets);
+
+    setLocaleMarkets((previousMappings) => {
+      const nextMappings = Object.fromEntries(
+        Object.entries(previousMappings).filter(([, selectedMarket]) =>
+          nextMarkets.includes(selectedMarket)
+        )
+      );
+
+      // A language switcher does not imply multi-currency when there is only
+      // one delivery market: every enabled language remains routed to that
+      // same country and therefore the same currency.
+      if (nextMarkets.length === 1) {
+        for (const locale of availableStorefrontLocales) {
+          nextMappings[locale] = nextMarkets[0];
+        }
+        return nextMappings;
+      }
+
+      if (checked) {
+        const suggestedLocale = defaultLocaleForMarket(market, availableStorefrontLocales);
+        if (suggestedLocale && !nextMappings[suggestedLocale]) {
+          nextMappings[suggestedLocale] = market;
+        }
+      }
+      return nextMappings;
     });
   }
 
@@ -346,11 +433,7 @@ export function SettingsForm({
                       : [store.google_feed_label]
                     ).includes(option.value)
                   }
-                  onChange={(e) => {
-                    setSelectedMarkets((prev) =>
-                      e.target.checked ? [...prev, option.value] : prev.filter((m) => m !== option.value)
-                    );
-                  }}
+                   onChange={(event) => handleMarketToggle(option.value, event.target.checked)}
                   className="h-4 w-4 rounded border-border accent-primary"
                 />
                 {option.label}
@@ -358,46 +441,135 @@ export function SettingsForm({
             ))}
           </div>
 
-          <div className="mt-4 space-y-1.5">
+          <div className="mt-5 space-y-3">
             <div className="flex items-center gap-1.5">
-              <Label className="text-sm">VAT Rate per Market</Label>
+              <Label className="text-sm">Currency and VAT per Market</Label>
               <FieldInfo
-                title="VAT Rate per Market"
+                title="Market Pricing"
                 description={
-                  "Your product prices are stored VAT-exclusive (net) -- the price before tax. Google Merchant needs the final price a customer actually pays, so enter each market's VAT percentage here and it gets added automatically only for that market's listings.\n\n" +
-                  "Leave a market blank to submit its raw net price unchanged (no VAT added) -- useful if you already price VAT-inclusive for that market elsewhere, or haven't confirmed the rate yet. Nothing changes for a market until you fill in a rate here."
+                  "Choose the currency customers use in each delivery market. Product prices are converted automatically from their stored currency using the latest available ECB reference rate, then that market's VAT is added.\n\n" +
+                  "Leave VAT blank to keep the converted price tax-exclusive. Exchange rates are refreshed automatically and should not be treated as a substitute for a fixed-price or hedging policy."
                 }
               />
             </div>
             {selectedMarkets.length === 0 ? (
               <p className="text-sm text-muted-foreground">Check at least one market above first.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+              <div className="space-y-3">
                 {FEED_LABEL_OPTIONS.filter((option) => selectedMarkets.includes(option.value)).map((option) => (
-                  <div key={option.value} className="flex items-center gap-2">
-                    <Label htmlFor={`vat_rate_${option.value}`} className="w-10 shrink-0 text-xs">
-                      {option.value}
-                    </Label>
-                    <div className="relative flex-1">
-                      <Input
-                        id={`vat_rate_${option.value}`}
-                        name={`vat_rate_${option.value}`}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        placeholder="e.g. 21"
-                        defaultValue={store.vat_rates?.[option.value] ?? ""}
-                        className="text-sm"
-                      />
-                      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                        %
-                      </span>
+                  <div
+                    key={option.value}
+                    className="grid gap-3 rounded-lg border bg-muted/15 p-4 sm:grid-cols-[minmax(150px,1fr)_minmax(180px,1fr)_140px] sm:items-end"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">{option.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Automatic reference-rate conversion
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`market_currency_${option.value}`} className="text-xs">
+                        Customer currency
+                      </Label>
+                      <Select
+                        name={`market_currency_${option.value}`}
+                        defaultValue={
+                          store.market_currencies?.[option.value] ??
+                          defaultCurrencyForMarket(option.value)
+                        }
+                      >
+                        <SelectTrigger id={`market_currency_${option.value}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CURRENCY_OPTIONS.map((currency) => (
+                            <SelectItem key={currency.value} value={currency.value}>
+                              {currency.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`vat_rate_${option.value}`} className="text-xs">
+                        VAT rate
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id={`vat_rate_${option.value}`}
+                          name={`vat_rate_${option.value}`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          placeholder="e.g. 19"
+                          defaultValue={store.vat_rates?.[option.value] ?? ""}
+                          className="pr-8 text-sm"
+                        />
+                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          %
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+            <div className="rounded-lg border border-dashed p-4">
+              <div className="flex items-center gap-1.5">
+                <Label className="text-sm">Storefront language routing</Label>
+                <FieldInfo
+                  title="Language and Market"
+                  description="Link each enabled storefront language to the delivery market it represents. Several languages can point to the same market and will therefore keep the same currency. For example, Czech and English can both point to Czech Republic and both display CZK. If you serve several markets, leave ambiguous languages unlinked until you choose the intended market."
+                />
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {availableStorefrontLocales.map((locale) => {
+                  const label =
+                    CONTENT_LANGUAGE_OPTIONS.find((item) => item.value === locale)?.label ?? locale;
+                  return (
+                    <div key={locale} className="space-y-1.5">
+                      <Label htmlFor={`locale_market_${locale}`} className="text-xs">
+                        {label}
+                      </Label>
+                      <Select
+                        name={`locale_market_${locale}`}
+                        value={localeMarkets[locale] ?? "__unlinked"}
+                        onValueChange={(market) =>
+                          setLocaleMarkets((prev) => {
+                            const next = { ...prev };
+                            if (market === "__unlinked") delete next[locale];
+                            else next[locale] = market;
+                            return next;
+                          })
+                        }
+                      >
+                        <SelectTrigger id={`locale_market_${locale}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__unlinked">Not active in Delivery Markets</SelectItem>
+                          {FEED_LABEL_OPTIONS.filter((market) =>
+                            selectedMarkets.includes(market.value)
+                          ).map((market) => (
+                            <SelectItem key={market.value} value={market.value}>
+                              {market.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Calculation order: stored product price → market currency conversion → market VAT.
+              Germany defaults to EUR; Poland defaults to PLN. You can override either currency.
+              Currency switching activates only when the selected delivery markets contain more
+              than one distinct customer currency. Extra languages linked to the same market keep
+              that market&apos;s currency.
+            </p>
           </div>
           <div className="mt-4 space-y-1.5 rounded-md border border-dashed border-border p-3">
             <Label htmlFor="paste_product_url" className="text-xs">

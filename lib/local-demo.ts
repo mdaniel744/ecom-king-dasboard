@@ -38,6 +38,8 @@ export const localDemoStore: Store = {
   enabled_locales: [],
   google_push_locales: [],
   vat_rates: {},
+  market_currencies: { US: "USD" },
+  locale_markets: { en: "US" },
   notification_email: null,
   notification_sender_name: null,
   notify_inquiries: true,

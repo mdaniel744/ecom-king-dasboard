@@ -5,6 +5,7 @@ const publicRoutes = [
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/feeds(.*)",
+  "/api/storefront/prices(.*)",
   // Called by Postgres triggers (pg_net), not signed-in users. Each endpoint
   // authenticates its request with its own shared webhook secret.
   "/api/inquiries/notify",

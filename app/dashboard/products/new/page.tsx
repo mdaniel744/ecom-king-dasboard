@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAttributeDefs } from "@/lib/attribute-defs";
 import { ProductForm } from "@/app/dashboard/products/product-form";
 import { createProduct } from "@/app/dashboard/products/actions";
+import { getPrimaryStoreCurrency, getStoreMarketPricing } from "@/lib/merchant-locales";
 import type { Brand, Category, Collection, ProductFamily } from "@/lib/types";
 
 export default async function NewProductPage() {
@@ -26,6 +27,8 @@ export default async function NewProductPage() {
       attributeDefs={attributeDefs}
       storeSourceLocale={store.google_content_language}
       enabledLocales={store.enabled_locales}
+      defaultCurrency={getPrimaryStoreCurrency(store)}
+      marketPricing={getStoreMarketPricing(store)}
     />
   );
 }
