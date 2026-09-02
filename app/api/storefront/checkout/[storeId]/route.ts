@@ -39,6 +39,18 @@ const bodySchema = z.object({
   billingAddress: addressSchema.optional(),
   deliveryAddress: addressSchema.optional(),
   customerNote: z.string().trim().max(2000).optional(),
+  // Optional -- lets a storefront's own client-generated order reference (e.g.
+  // "DC-20260902-0007") become the actual order_number shown in the
+  // dashboard, instead of our auto-generated default, so what the customer
+  // sees on their confirmation page matches what staff see here. Omit to
+  // fall back to the database's own ORD-YYYYMMDD-NNNNN sequence.
+  clientReference: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[A-Za-z0-9._-]+$/, "Reference may only contain letters, numbers, dots, hyphens, underscores")
+    .optional(),
   lineItems: z
     .array(
       z.object({
@@ -221,6 +233,11 @@ export async function POST(
       .from("checkout_orders")
       .insert({
         store_id: store.id,
+        // Omitted entirely (not even as null) when not sent, so the
+        // database's own ORD-YYYYMMDD-NNNNN default still applies --
+        // explicitly passing null would satisfy the nullable column but
+        // skip the default expression instead of triggering it.
+        ...(parsed.data.clientReference ? { order_number: parsed.data.clientReference } : {}),
         customer_name: parsed.data.customerName,
         customer_email: parsed.data.customerEmail,
         customer_phone: parsed.data.customerPhone || null,
@@ -237,6 +254,12 @@ export async function POST(
       .select("id, order_number, currency, subtotal, tax_amount, total_amount, order_status, payment_status")
       .single();
 
+    if (insertError?.code === "23505") {
+      return json(
+        { error: `An order with reference "${parsed.data.clientReference}" already exists.` },
+        { status: 409 }
+      );
+    }
     if (insertError || !order) {
       console.error("Checkout order creation failed:", insertError);
       return json({ error: "The order could not be created. Please try again." }, { status: 500 });
