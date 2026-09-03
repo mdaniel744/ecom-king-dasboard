@@ -200,7 +200,7 @@ export function buildProductLink(store: Store, product: Product, locale: string,
   const localePrefix = isSource && !store.source_locale_has_prefix ? "" : `/${locale}`;
   const word = store.product_url_path_overrides?.[locale] || store.product_url_path;
   const path = word.replace(/^\/|\/$/g, "");
-  return `${trimmedBase}${localePrefix}/${path}/${localizedSlug || product.slug}`;
+  return `${trimmedBase}${localePrefix}${path ? `/${path}` : ""}/${localizedSlug || product.slug}`;
 }
 
 export type LinkCheckResult = {
