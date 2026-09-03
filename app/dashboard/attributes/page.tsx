@@ -10,9 +10,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AttributeDialog } from "@/app/dashboard/attributes/attribute-dialog";
+import { AttributePresetManager } from "@/app/dashboard/attributes/attribute-preset-manager";
 import { DeleteAttributeButton } from "@/app/dashboard/attributes/delete-attribute-button";
 import { AttributeValueEditDialog } from "@/app/dashboard/attributes/attribute-value-edit-dialog";
-import type { Attribute, AttributeValue } from "@/lib/types";
+import type { Attribute, AttributePreset, AttributeValue } from "@/lib/types";
 
 export default async function AttributesPage() {
   const store = await getCurrentStore();
@@ -39,6 +40,16 @@ export default async function AttributesPage() {
     valuesByAttribute.set(v.attribute_id, list);
   });
 
+  const { data: presets } = await supabaseAdmin
+    .from("attribute_presets")
+    .select("*")
+    .eq("store_id", store.id)
+    .order("name");
+  const attributeDefs = attrList.map((attribute) => ({
+    name: attribute.name,
+    values: (valuesByAttribute.get(attribute.id) ?? []).map((value) => value.value),
+  }));
+
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -48,7 +59,11 @@ export default async function AttributesPage() {
             Define custom product attributes like size, material, or color
           </p>
         </div>
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <AttributePresetManager
+            attributeDefs={attributeDefs}
+            presets={(presets ?? []) as AttributePreset[]}
+          />
           <AttributeDialog />
         </div>
       </div>

@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Attribute,
+  AttributePreset,
   AttributeValue,
   Brand,
   Category,
@@ -129,6 +130,20 @@ const demoAttributeValues: AttributeValue[] = [
   description: null,
   created_at: now,
 }));
+
+const demoAttributePresets: AttributePreset[] = [
+  {
+    id: "00000000-0000-4000-8000-000000000251",
+    store_id: localDemoStore.id,
+    name: "Classic hoodie basics",
+    attributes: {
+      Size: "Medium",
+      Colour: "Black",
+    },
+    created_at: now,
+    updated_at: now,
+  },
+];
 
 const demoProductFamily: ProductFamily = {
   id: "00000000-0000-4000-8000-000000000301",
@@ -546,6 +561,7 @@ const demoRowsByTable: Record<string, Record<string, unknown>[]> = {
   collections: [demoCollection as unknown as Record<string, unknown>],
   attributes: demoAttributes as unknown as Record<string, unknown>[],
   attribute_values: demoAttributeValues as unknown as Record<string, unknown>[],
+  attribute_presets: demoAttributePresets as unknown as Record<string, unknown>[],
   product_families: [demoProductFamily as unknown as Record<string, unknown>],
   products: demoProducts as unknown as Record<string, unknown>[],
   dealer_applications: demoDealerApplications as unknown as Record<string, unknown>[],

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { AttributePreset } from "@/lib/types";
 
 export type AttributeDef = {
   name: string;
@@ -42,4 +43,14 @@ export async function getAttributeDefs(storeId: string): Promise<AttributeDef[]>
     name: attr.name,
     values: valuesByAttribute.get(attr.id) ?? [],
   }));
+}
+
+export async function getAttributePresets(storeId: string): Promise<AttributePreset[]> {
+  const { data } = await supabaseAdmin
+    .from("attribute_presets")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("name");
+
+  return (data ?? []) as AttributePreset[];
 }

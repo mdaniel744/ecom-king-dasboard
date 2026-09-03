@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getAttributeDefs } from "@/lib/attribute-defs";
+import { getAttributeDefs, getAttributePresets } from "@/lib/attribute-defs";
 import { ProductForm } from "@/app/dashboard/products/product-form";
 import { updateProduct } from "@/app/dashboard/products/actions";
 import { getPrimaryStoreCurrency, getStoreMarketPricing } from "@/lib/merchant-locales";
@@ -15,7 +15,7 @@ export default async function EditProductPage({
   const { id } = await params;
   const store = await getCurrentStore();
 
-  const [{ data: product }, { data: categories }, { data: brands }, { data: collections }, { data: families }, attributeDefs] =
+  const [{ data: product }, { data: categories }, { data: brands }, { data: collections }, { data: families }, attributeDefs, attributePresets] =
     await Promise.all([
       supabaseAdmin
         .from("products")
@@ -32,6 +32,7 @@ export default async function EditProductPage({
       supabaseAdmin.from("collections").select("*").eq("store_id", store.id).order("name"),
       supabaseAdmin.from("product_families").select("*").eq("store_id", store.id).order("name"),
       getAttributeDefs(store.id),
+      getAttributePresets(store.id),
     ]);
 
   if (!product) notFound();
@@ -45,6 +46,7 @@ export default async function EditProductPage({
       collections={(collections ?? []) as Collection[]}
       families={(families ?? []) as ProductFamily[]}
       attributeDefs={attributeDefs}
+      attributePresets={attributePresets}
       storeSourceLocale={store.google_content_language}
       enabledLocales={store.enabled_locales}
       defaultCurrency={getPrimaryStoreCurrency(store)}

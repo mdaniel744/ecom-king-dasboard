@@ -23,7 +23,14 @@ import { AIWriteButton } from "@/components/dashboard/ai-write-button";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
 import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
 import { FieldInfo } from "@/components/ui/field-info";
-import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
+import type {
+  AttributePreset,
+  Brand,
+  Category,
+  Collection,
+  Product,
+  ProductFamily,
+} from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
@@ -33,6 +40,7 @@ import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
 import { ProductMediaManager } from "./product-media-manager";
+import { AttributePresetPicker } from "./attribute-preset-picker";
 import { previewMarketPrices, type MarketPricePreview } from "./actions";
 import { stripHtml } from "@/lib/html";
 import { slugify } from "@/lib/slug";
@@ -46,6 +54,7 @@ type Props = {
   collections?: Collection[];
   families?: ProductFamily[];
   attributeDefs: AttributeDef[];
+  attributePresets?: AttributePreset[];
   storeSourceLocale?: string;
   enabledLocales?: string[];
   defaultCurrency?: string;
@@ -63,6 +72,7 @@ export function ProductForm({
   collections = [],
   families = [],
   attributeDefs,
+  attributePresets = [],
   storeSourceLocale = "en",
   enabledLocales = [],
   defaultCurrency = "USD",
@@ -236,6 +246,24 @@ export function ProductForm({
       (def) => def.name.trim().toLowerCase() === key.trim().toLowerCase()
     );
     return match?.values ?? [];
+  }
+
+  function applyAttributePreset(preset: AttributePreset) {
+    setAttrs((current) => {
+      const merged = new Map<string, [string, string]>();
+
+      current.forEach(([key, value]) => {
+        const trimmedKey = key.trim();
+        if (trimmedKey) merged.set(trimmedKey.toLowerCase(), [trimmedKey, value]);
+      });
+      Object.entries(preset.attributes).forEach(([key, value]) => {
+        merged.set(key.trim().toLowerCase(), [key, value]);
+      });
+
+      const next = Array.from(merged.values());
+      return next.length > 0 ? next : [["", ""]];
+    });
+    toast.success(`${preset.name} applied`);
   }
 
   async function handleGenerateMpn() {
@@ -462,19 +490,20 @@ export function ProductForm({
           </Card>
 
           <Card>
-            <CardHeader>
-              <div className="flex items-center gap-1.5">
-                <CardTitle className="text-base">Attributes</CardTitle>
-                <FieldInfo
-                  title="Product Attributes"
-                  description="Custom specifications for this product — things like Size, Material, Color, Weight, or any other property relevant to your niche. These are displayed on the product page and help customers filter and compare. Add only what applies to this specific product."
+            <CardHeader className="gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CardTitle className="text-base">Attributes</CardTitle>
+                  <FieldInfo
+                    title="Product Attributes"
+                    description="Custom specifications for this product — things like Size, Material, Color, Weight, or any other property relevant to your niche. These are displayed on the product page and help customers filter and compare. Add only what applies to this specific product."
+                  />
+                </div>
+                <AttributePresetPicker
+                  presets={attributePresets}
+                  onSelect={applyAttributePreset}
                 />
               </div>
-              <p className="text-sm text-muted-foreground">
-                Add only what this product needs. Suggestions come from
-                values you&apos;ve saved before — type your own anytime if
-                what you need isn&apos;t listed.
-              </p>
             </CardHeader>
             <CardContent className="space-y-3">
               {attrs.map(([key, value], i) => (

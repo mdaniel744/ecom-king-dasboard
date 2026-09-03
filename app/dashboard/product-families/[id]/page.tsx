@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, ImageIcon, Plus, Wand2 } from "lucide-react";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getAttributeDefs } from "@/lib/attribute-defs";
+import { getAttributeDefs, getAttributePresets } from "@/lib/attribute-defs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,6 +54,7 @@ export default async function ProductFamilyDetailPage({
     { data: collections },
     { data: families },
     attributeDefs,
+    attributePresets,
   ] = await Promise.all([
     supabaseAdmin
       .from("product_families")
@@ -72,6 +73,7 @@ export default async function ProductFamilyDetailPage({
     supabaseAdmin.from("collections").select("*").eq("store_id", store.id).order("name"),
     supabaseAdmin.from("product_families").select("*").eq("store_id", store.id).order("name"),
     getAttributeDefs(store.id),
+    getAttributePresets(store.id),
   ]);
 
   if (!family) notFound();
@@ -191,6 +193,7 @@ export default async function ProductFamilyDetailPage({
             collections={(collections ?? []) as Collection[]}
             families={(families ?? []) as ProductFamily[]}
             attributeDefs={attributeDefs}
+            attributePresets={attributePresets}
             storeSourceLocale={store.google_content_language}
             enabledLocales={store.enabled_locales}
             defaultCurrency={getPrimaryStoreCurrency(store)}

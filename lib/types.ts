@@ -224,6 +224,15 @@ export type AttributeValue = {
   created_at: string;
 };
 
+export type AttributePreset = {
+  id: string;
+  store_id: string;
+  name: string;
+  attributes: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProductStatus = "draft" | "active" | "archived";
 export type ProductCondition = "new" | "used" | "refurbished";
 export type GoogleSyncStatus = "not_synced" | "pending" | "synced" | "error";
