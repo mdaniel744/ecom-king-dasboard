@@ -121,6 +121,10 @@ export async function POST(
 
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
+    console.error(
+      `Storefront checkout rejected [${storeId}]: invalid request`,
+      z.flattenError(parsed.error).fieldErrors
+    );
     return json(
       { error: "Invalid checkout request", details: z.flattenError(parsed.error).fieldErrors },
       { status: 400 }
@@ -130,6 +134,7 @@ export async function POST(
   const clientAddress =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (!checkRateLimit(`storefront-checkout:${clientAddress}:${storeId}`, 20, 60_000)) {
+    console.error(`Storefront checkout rejected [${storeId}]: rate limited (${clientAddress})`);
     return json(
       { error: "Too many checkout attempts. Please try again shortly." },
       { status: 429, headers: { "Retry-After": "60" } }
@@ -147,12 +152,16 @@ export async function POST(
 
   const { data: storeData, error: storeError } = await storeQuery.maybeSingle();
   if (storeError || !storeData) {
+    console.error(`Storefront checkout rejected [${storeId}]: store not found`, storeError);
     return json({ error: "Store not found" }, { status: 404 });
   }
   const store = storeData as PricingStore;
 
   const configuredMarkets = getStoreMarkets(store);
   if (parsed.data.market && !configuredMarkets.includes(parsed.data.market)) {
+    console.error(
+      `Storefront checkout rejected [${storeId}]: market "${parsed.data.market}" not enabled (configured: ${configuredMarkets.join(", ")})`
+    );
     return json(
       { error: `The delivery market "${parsed.data.market}" is not enabled for this store.` },
       { status: 400 }
@@ -162,6 +171,9 @@ export async function POST(
     parsed.data.market ||
     (parsed.data.locale ? resolveStorefrontMarket(store, parsed.data.locale) : configuredMarkets[0]);
   if (!market) {
+    console.error(
+      `Storefront checkout rejected [${storeId}]: no market resolvable from locale "${parsed.data.locale}"`
+    );
     return json(
       {
         error:
@@ -192,6 +204,9 @@ export async function POST(
     return !product || product.status !== "active" || product.price == null;
   });
   if (missingOrInactive.length > 0) {
+    console.error(
+      `Storefront checkout rejected [${storeId}]: unavailable products ${missingOrInactive.join(", ")}`
+    );
     return json(
       {
         error: "Some items in your cart are no longer available.",
@@ -255,6 +270,9 @@ export async function POST(
       .single();
 
     if (insertError?.code === "23505") {
+      console.error(
+        `Storefront checkout rejected [${storeId}]: duplicate clientReference "${parsed.data.clientReference}"`
+      );
       return json(
         { error: `An order with reference "${parsed.data.clientReference}" already exists.` },
         { status: 409 }
@@ -282,6 +300,7 @@ export async function POST(
     );
   } catch (error) {
     if (error instanceof CurrencyConversionError) {
+      console.error(`Storefront checkout rejected [${storeId}]: currency conversion — ${error.message}`);
       return json({ error: error.message }, { status: 422 });
     }
     console.error("Storefront checkout failed:", error);
