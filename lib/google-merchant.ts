@@ -5,6 +5,7 @@ import type { Product, ProductCondition, Store } from "@/lib/types";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
 import { stripHtml } from "@/lib/html";
 import { convertPriceForMarket } from "@/lib/market-pricing";
+import { defaultLocaleForMarket } from "@/lib/merchant-locales";
 
 const MERCHANT_API_BASE = "https://merchantapi.googleapis.com/products/v1";
 
@@ -75,9 +76,9 @@ function getAuthClient(): JWT {
 }
 
 /**
- * A store's delivery markets (Google feed labels) and the locales actually
- * submitted to Google, combined into every market x locale pair a product
- * must be individually submitted to. Source language is always included.
+ * A store's delivery markets (Google feed labels) paired with the locale(s)
+ * actually submitted to Google for each one. Source language is always
+ * included.
  *
  * Locales come from google_push_locales, NOT enabled_locales directly —
  * those are two separate settings. enabled_locales controls what gets
@@ -94,8 +95,21 @@ function getAuthClient(): JWT {
  * The XML feed (Settings page's Feed URL card) intentionally does NOT use
  * this function — it still enumerates every enabled_locales combo, since a
  * store picks which feed URLs to actually add to Merchant Center by hand.
+ *
+ * A single-market store has nothing to disambiguate: every pushed locale is
+ * a legitimate variant of that one market (STF, confirmed live: one NL
+ * market, four languages, all real listings a Dutch-market shopper might
+ * search in) — every locale still pairs with the one market. A multi-market
+ * store instead pairs each market with only its own matching locale
+ * (falling back to the source locale if no pushed locale matches that
+ * market's default), rather than crossing every locale into every market.
+ * Without this, Olborg (DE + PL markets) had Polish-language listings
+ * submitted to the German market, and — once German was actually pushed —
+ * would have gained German-language listings submitted to the Polish
+ * market too, neither of which reflects what either market's shoppers
+ * should see.
  */
-function getMarketsAndLocales(store: Store): { markets: string[]; locales: string[] } {
+function getMarketLocaleCombos(store: Store): { market: string; locale: string }[] {
   const markets =
     store.google_feed_labels && store.google_feed_labels.length > 0
       ? store.google_feed_labels
@@ -103,9 +117,16 @@ function getMarketsAndLocales(store: Store): { markets: string[]; locales: strin
 
   const sourceLocale = store.google_content_language || "en";
   const pushLocales = store.google_push_locales ?? [];
-  const locales = Array.from(new Set([sourceLocale, ...pushLocales]));
+  const allLocales = Array.from(new Set([sourceLocale, ...pushLocales]));
 
-  return { markets, locales };
+  if (markets.length === 1) {
+    return allLocales.map((locale) => ({ market: markets[0], locale }));
+  }
+
+  return markets.map((market) => ({
+    market,
+    locale: defaultLocaleForMarket(market, allLocales) ?? sourceLocale,
+  }));
 }
 
 export type TranslatedFields = { name: string; description: string; short_description: string | null; slug: string };
@@ -353,29 +374,27 @@ export async function upsertGoogleProduct(
   const accountId = getAccountId(store);
   const dataSource = getDataSourceName(store, accountId);
   const client = getAuthClient();
-  const { markets, locales } = getMarketsAndLocales(store);
+  const combos = getMarketLocaleCombos(store);
   const textByLocale = await getTranslationsByLocale(store, product);
 
   const results: { market: string; locale: string; name?: string; error?: string }[] = [];
 
-  for (const feedLabel of markets) {
-    for (const locale of locales) {
-      const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
-      try {
-        const body = await buildProductInput(store, product, locale, feedLabel, text, productType);
-        const res = await client.request({
-          url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs:insert?dataSource=${encodeURIComponent(dataSource)}`,
-          method: "POST",
-          data: body,
-          timeout: 25000,
-        });
-        results.push({ market: feedLabel, locale, name: (res.data as { name: string }).name });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        results.push({ market: feedLabel, locale, error: message });
-      }
-      await sleep(COMBO_DELAY_MS);
+  for (const { market: feedLabel, locale } of combos) {
+    const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
+    try {
+      const body = await buildProductInput(store, product, locale, feedLabel, text, productType);
+      const res = await client.request({
+        url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs:insert?dataSource=${encodeURIComponent(dataSource)}`,
+        method: "POST",
+        data: body,
+        timeout: 25000,
+      });
+      results.push({ market: feedLabel, locale, name: (res.data as { name: string }).name });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.push({ market: feedLabel, locale, error: message });
     }
+    await sleep(COMBO_DELAY_MS);
   }
 
   const failures = results.filter((r) => r.error);
@@ -384,12 +403,11 @@ export async function upsertGoogleProduct(
     throw new Error(summary);
   }
 
-  // The source-language listing in the first configured market is stored as
-  // "the" reference id for display — informational only, not used for sync
-  // logic (all combinations are re-submitted as a full upsert every time).
+  // The source-language listing in the first combo is stored as "the"
+  // reference id for display — informational only, not used for sync logic
+  // (all combinations are re-submitted as a full upsert every time).
   const primary =
-    results.find((r) => r.locale === store.google_content_language && r.market === markets[0]) ??
-    results[0];
+    results.find((r) => r.locale === store.google_content_language) ?? results[0];
   return { name: primary?.name ?? "" };
 }
 
@@ -397,23 +415,21 @@ export async function deleteGoogleProduct(store: Store, productId: string) {
   const accountId = getAccountId(store);
   const dataSource = getDataSourceName(store, accountId);
   const client = getAuthClient();
-  const { markets, locales } = getMarketsAndLocales(store);
+  const combos = getMarketLocaleCombos(store);
 
-  for (const feedLabel of markets) {
-    for (const locale of locales) {
-      const productInputName = `${locale}~${feedLabel}~${productId}`;
-      try {
-        await client.request({
-          url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs/${productInputName}?dataSource=${encodeURIComponent(dataSource)}`,
-          method: "DELETE",
-          timeout: 25000,
-        });
-      } catch {
-        // Best-effort per combination — a listing that was never actually
-        // submitted for this market/locale will 404 on delete, which is
-        // expected, not a failure worth surfacing.
-      }
-      await sleep(COMBO_DELAY_MS);
+  for (const { market: feedLabel, locale } of combos) {
+    const productInputName = `${locale}~${feedLabel}~${productId}`;
+    try {
+      await client.request({
+        url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs/${productInputName}?dataSource=${encodeURIComponent(dataSource)}`,
+        method: "DELETE",
+        timeout: 25000,
+      });
+    } catch {
+      // Best-effort per combination — a listing that was never actually
+      // submitted for this market/locale will 404 on delete, which is
+      // expected, not a failure worth surfacing.
     }
+    await sleep(COMBO_DELAY_MS);
   }
 }
