@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { sendMail, resolveStoreSmtp } from "@/lib/mailer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { addressLines } from "@/lib/checkout-order-display";
 import type { Store } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -93,9 +94,17 @@ function lineItemSummary(row: Record<string, unknown>, type: NotificationType) {
       if (!item || typeof item !== "object") return "Product";
       const typed = item as Record<string, unknown>;
       const quantity = Number(typed.quantity);
-      return `${text(typed.title, "Product")} × ${Number.isFinite(quantity) ? quantity : 1}`;
+      const extras = [typed.condition, typed.brand].filter((v) => typeof v === "string" && v);
+      const suffix = extras.length ? ` (${extras.join(", ")})` : "";
+      return `${text(typed.title, "Product")} × ${Number.isFinite(quantity) ? quantity : 1}${suffix}`;
     })
     .join(", ");
+}
+
+function addressSummary(address: unknown): string | null {
+  if (!address || typeof address !== "object") return null;
+  const lines = addressLines(address as never);
+  return lines.length ? lines.join(", ") : null;
 }
 
 function notificationDetails(type: NotificationType, row: Record<string, unknown>) {
@@ -108,6 +117,9 @@ function notificationDetails(type: NotificationType, row: Record<string, unknown
       customerPhone: text(row.customer_phone),
       summary: text(row.message, "No message supplied"),
       amount: null,
+      billingAddress: null,
+      deliveryAddress: null,
+      note: null,
     };
   }
 
@@ -120,6 +132,9 @@ function notificationDetails(type: NotificationType, row: Record<string, unknown
       customerPhone: text(row.customer_phone),
       summary: lineItemSummary(row, type),
       amount: money(row),
+      billingAddress: addressSummary(row.billing_address),
+      deliveryAddress: addressSummary(row.delivery_address),
+      note: typeof row.customer_note === "string" && row.customer_note.trim() ? row.customer_note : null,
     };
   }
 
@@ -131,6 +146,9 @@ function notificationDetails(type: NotificationType, row: Record<string, unknown
     customerPhone: "—",
     summary: lineItemSummary(row, type),
     amount: money(row),
+    billingAddress: null,
+    deliveryAddress: null,
+    note: null,
   };
 }
 
@@ -207,6 +225,9 @@ export async function POST(request: NextRequest) {
             <tr><td style="padding: 6px 12px 6px 0; color: #71717a;">Phone</td><td style="padding: 6px 0;">${escapeHtml(details.customerPhone)}</td></tr>
             ${details.amount ? `<tr><td style="padding: 6px 12px 6px 0; color: #71717a;">Total</td><td style="padding: 6px 0; font-weight: 700;">${escapeHtml(details.amount)}</td></tr>` : ""}
             <tr><td style="padding: 6px 12px 6px 0; color: #71717a; vertical-align: top;">${type === "inquiry" ? "Message" : "Products"}</td><td style="padding: 6px 0;">${escapeHtml(details.summary)}</td></tr>
+            ${details.billingAddress ? `<tr><td style="padding: 6px 12px 6px 0; color: #71717a; vertical-align: top;">Billing address</td><td style="padding: 6px 0;">${escapeHtml(details.billingAddress)}</td></tr>` : ""}
+            ${details.deliveryAddress ? `<tr><td style="padding: 6px 12px 6px 0; color: #71717a; vertical-align: top;">Delivery address</td><td style="padding: 6px 0;">${escapeHtml(details.deliveryAddress)}</td></tr>` : ""}
+            ${details.note ? `<tr><td style="padding: 6px 12px 6px 0; color: #71717a; vertical-align: top;">Note</td><td style="padding: 6px 0;">${escapeHtml(details.note)}</td></tr>` : ""}
           </table>
           <a href="${escapeHtml(dashboardUrl)}" style="display: inline-block; border-radius: 6px; background: #7c3aed; color: white; padding: 10px 16px; text-decoration: none; font-weight: 600;">Open in ${escapeHtml(route.destination)}</a>
         </div>
