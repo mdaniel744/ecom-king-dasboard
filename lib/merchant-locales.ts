@@ -125,8 +125,16 @@ export function getStoreMarkets(store: LocaleMarketStore): string[] {
 }
 
 /** Resolve a storefront locale (including values such as en-GB) to one of
- * this store's configured delivery markets. Only an explicit mapping saved
- * in Delivery Markets activates locale-driven pricing. */
+ * this store's configured delivery markets. An explicit mapping saved in
+ * Delivery Markets is what disambiguates a locale for a store with more
+ * than one configured market (e.g. Olborg: "de" could mean either DE or PL
+ * delivery). A store with exactly one configured market has nothing to
+ * disambiguate, so it's used directly even with no mapping saved -- without
+ * this, every single-market store's checkout hard-rejects any request that
+ * sends an explicit locale until an operator manually fills in Delivery
+ * Markets, which real production traffic hit before any single-market store
+ * had a reason to configure it (confirmed: Die Containers, Kariv, STF, and
+ * HJ all had an empty locale_markets at the time). */
 export function resolveStorefrontMarket(
   store: LocaleMarketStore,
   requestedLocale: string
@@ -137,6 +145,7 @@ export function resolveStorefrontMarket(
   const explicitMarket = store.locale_markets?.[locale] ?? store.locale_markets?.[baseLocale];
 
   if (explicitMarket && markets.includes(explicitMarket)) return explicitMarket;
+  if (markets.length === 1) return markets[0];
   return null;
 }
 
