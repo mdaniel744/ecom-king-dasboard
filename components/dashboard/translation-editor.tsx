@@ -14,6 +14,7 @@ import {
   saveManualTranslation,
   resetTranslationToAI,
 } from "@/app/dashboard/translations/actions";
+import { retryProductTranslations } from "@/app/dashboard/products/actions";
 
 type EntityType = "product" | "category" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
 
@@ -42,6 +43,7 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
   const [activeLocale, setActiveLocale] = useState(enabledLocales[0] ?? "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingField, setSavingField] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (!entityId || enabledLocales.length === 0) {
@@ -145,10 +147,38 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
     }
   }
 
+  async function handleRetry() {
+    if (!entityId || entityType !== "product") return;
+    setRetrying(true);
+    const result = await retryProductTranslations(entityId);
+    setRetrying(false);
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+    const refreshed = await getEntityTranslations(entityType, entityId);
+    setData(refreshed);
+    if (result.data.failed > 0) {
+      toast.error(`${result.data.failed} translation field(s) still failed. Check the translation service and retry.`);
+    } else if (result.data.succeeded > 0) {
+      toast.success(`${result.data.succeeded} translation field(s) completed.`);
+    } else {
+      toast.success("Translations are already complete or protected by human edits.");
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Translations</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base">Translations</CardTitle>
+          {entityType === "product" && (
+            <Button type="button" variant="outline" size="sm" onClick={handleRetry} disabled={retrying}>
+              {retrying ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+              {retrying ? "Retrying…" : "Retry missing"}
+            </Button>
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
           Auto-translated on save. Fix anything wrong here — once you save a correction, AI won&apos;t
           touch that field/language again.

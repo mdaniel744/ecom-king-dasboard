@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ToggleStatusButton } from "@/app/dashboard/inquiries/toggle-status-button";
 import { DeleteInquiryButton } from "@/app/dashboard/inquiries/delete-inquiry-button";
-import { inquiryRef } from "@/lib/inquiry-display";
+import { asRecord, inquiryRef, readableValue } from "@/lib/inquiry-display";
 import type { Inquiry, Product } from "@/lib/types";
 
 export default async function InquiriesPage() {
@@ -43,10 +43,26 @@ export default async function InquiriesPage() {
             </CardContent>
           </Card>
         )}
-        {items.map((inquiry) => (
-          <Card key={inquiry.id}>
+        {items.map((inquiry) => {
+          const productSnapshot = asRecord(inquiry.product_snapshot);
+          const productName =
+            productNameById.get(inquiry.product_id ?? "") ??
+            readableValue(productSnapshot.name) ??
+            "General inquiry";
+          const productImage = readableValue(productSnapshot.image);
+
+          return <Card key={inquiry.id}>
             <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1">
+              <div className="flex min-w-0 gap-3">
+                {productImage && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={productImage}
+                    alt=""
+                    className="h-12 w-12 shrink-0 rounded-md border border-border object-cover"
+                  />
+                )}
+                <div className="min-w-0 space-y-1">
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{inquiry.customer_name || "Anonymous"}</p>
                   <Badge variant={inquiry.status === "open" ? "default" : "secondary"}>
@@ -57,15 +73,12 @@ export default async function InquiriesPage() {
                 <p className="text-sm text-muted-foreground">
                   {[inquiry.customer_email, inquiry.customer_phone].filter(Boolean).join(" · ")}
                 </p>
-                {inquiry.product_id && (
-                  <p className="text-sm text-muted-foreground">
-                    Re: {productNameById.get(inquiry.product_id) ?? "Unknown product"}
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">Re: {productName}</p>
                 {inquiry.message && <p className="mt-2 text-sm">{inquiry.message}</p>}
                 <p className="text-xs text-muted-foreground">
                   {new Date(inquiry.created_at).toLocaleString()}
                 </p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Button asChild size="sm">
@@ -77,8 +90,8 @@ export default async function InquiriesPage() {
                 <DeleteInquiryButton inquiryId={inquiry.id} />
               </div>
             </CardContent>
-          </Card>
-        ))}
+          </Card>;
+        })}
       </div>
     </div>
   );

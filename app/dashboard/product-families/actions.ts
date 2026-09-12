@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { slugify } from "@/lib/slug";
@@ -10,7 +11,8 @@ import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { syncTranslations } from "@/lib/translation-sync";
 import { getAttributeDefs } from "@/lib/attribute-defs";
 import { getPrimaryStoreCurrency } from "@/lib/merchant-locales";
-import type { ProductFamily, Store } from "@/lib/types";
+import { syncProductTranslations } from "@/lib/product-translation-workflow";
+import type { Product, ProductFamily, Store } from "@/lib/types";
 
 const familyFieldsSchema = z.object({
   name: z.string().trim().min(1, "Family name is required").max(200, "Name is too long"),
@@ -372,8 +374,16 @@ async function generateVariantsForFamily(
   }
 
   if (newProducts.length > 0) {
-    const { error } = await supabaseAdmin.from("products").insert(newProducts);
+    const { data, error } = await supabaseAdmin.from("products").insert(newProducts).select();
     if (error) throw error;
+    const createdProducts = (data ?? []) as Product[];
+    after(async () => {
+      // Variant generation can create dozens of rows at once. Keep this
+      // deliberately sequential so it cannot recreate the old >10 crash.
+      for (const product of createdProducts) {
+        await syncProductTranslations(store, product, { onlyMissing: true });
+      }
+    });
   }
 
   return { created: newProducts.length, skipped };

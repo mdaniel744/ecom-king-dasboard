@@ -16,7 +16,33 @@ type SyncParams = {
    * than plain strings — translated with tag-preservation instructions
    * instead of the default plain-text prompt. */
   htmlFields?: string[];
+  /** Preserve existing AI rows too. Used by imports/retries so a large batch
+   * only fills gaps instead of paying to regenerate completed work. */
+  onlyMissing?: boolean;
 };
+
+export type TranslationSyncSummary = {
+  attempted: number;
+  succeeded: number;
+  skipped: number;
+  failures: Array<{ locale: string; fieldName: string; message: string }>;
+};
+
+const TRANSLATION_CONCURRENCY = 3;
+
+async function runBounded<T>(jobs: Array<() => Promise<T>>, concurrency = TRANSLATION_CONCURRENCY) {
+  const results: T[] = [];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < jobs.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await jobs[index]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()));
+  return results;
+}
 
 /**
  * Returns the set of "locale:field_name" keys that a human has manually
@@ -25,10 +51,15 @@ type SyncParams = {
  * they explicitly ask for it to be re-translated (see
  * app/dashboard/translations/actions.ts for that manual-reset path).
  */
-async function getHumanLockedKeys(entityType: EntityType, entityId: string): Promise<Set<string>> {
+async function getHumanLockedKeys(
+  storeId: string,
+  entityType: EntityType,
+  entityId: string
+): Promise<Set<string>> {
   const { data } = await supabaseAdmin
     .from("translations")
     .select("locale, field_name")
+    .eq("store_id", storeId)
     .eq("entity_type", entityType)
     .eq("entity_id", entityId)
     .eq("translator", "human");
@@ -56,22 +87,40 @@ export async function syncTranslations({
   fields,
   categoryPath,
   htmlFields = [],
-}: SyncParams): Promise<void> {
+  onlyMissing = false,
+}: SyncParams): Promise<TranslationSyncSummary> {
+  const summary: TranslationSyncSummary = { attempted: 0, succeeded: 0, skipped: 0, failures: [] };
   const sourceLocale = store.google_content_language || "en";
   const targetLocales = (store.enabled_locales ?? []).filter((locale) => locale !== sourceLocale);
-  if (targetLocales.length === 0) return;
+  if (targetLocales.length === 0) return summary;
 
   const fieldEntries = Object.entries(fields).filter(
     (entry): entry is [string, string] => Boolean(entry[1]?.trim())
   );
-  if (fieldEntries.length === 0) return;
+  if (fieldEntries.length === 0) return summary;
 
-  const lockedKeys = await getHumanLockedKeys(entityType, entityId);
+  const lockedKeys = await getHumanLockedKeys(store.id, entityType, entityId);
+  const existingKeys = new Set<string>();
+  if (onlyMissing) {
+    const { data } = await supabaseAdmin
+      .from("translations")
+      .select("locale, field_name")
+      .eq("store_id", store.id)
+      .eq("entity_type", entityType)
+      .eq("entity_id", entityId);
+    for (const row of data ?? []) existingKeys.add(`${row.locale}:${row.field_name}`);
+  }
 
   const jobs = targetLocales.flatMap((locale) =>
     fieldEntries
-      .filter(([fieldName]) => !lockedKeys.has(`${locale}:${fieldName}`))
-      .map(async ([fieldName, value]) => {
+      .filter(([fieldName]) => {
+        const key = `${locale}:${fieldName}`;
+        const skip = lockedKeys.has(key) || (onlyMissing && existingKeys.has(key));
+        if (skip) summary.skipped += 1;
+        return !skip;
+      })
+      .map(([fieldName, value]) => async () => {
+        summary.attempted += 1;
         try {
           const translated = await translateText({
             text: value,
@@ -83,7 +132,7 @@ export async function syncTranslations({
             isHtml: htmlFields.includes(fieldName),
           });
 
-          await supabaseAdmin.from("translations").upsert(
+          const { error } = await supabaseAdmin.from("translations").upsert(
             {
               store_id: store.id,
               entity_type: entityType,
@@ -95,6 +144,8 @@ export async function syncTranslations({
             },
             { onConflict: "entity_type,entity_id,field_name,locale" }
           );
+          if (error) throw error;
+          summary.succeeded += 1;
 
           // Some real storefronts (STF, confirmed live) translate the
           // product URL slug itself per language, not just the visible
@@ -105,7 +156,7 @@ export async function syncTranslations({
           // the source-language slug was generated with.
           if (entityType === "product" && fieldName === "name" && !lockedKeys.has(`${locale}:slug`)) {
             try {
-              await supabaseAdmin.from("translations").upsert(
+              const { error: slugError } = await supabaseAdmin.from("translations").upsert(
                 {
                   store_id: store.id,
                   entity_type: entityType,
@@ -117,18 +168,21 @@ export async function syncTranslations({
                 },
                 { onConflict: "entity_type,entity_id,field_name,locale" }
               );
+              if (slugError) throw slugError;
             } catch {
               // best-effort, same rationale as below
             }
           }
-        } catch {
-          // Best-effort — see function doc comment. Leaves any prior
-          // successful translation for this field/locale untouched.
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          summary.failures.push({ locale, fieldName, message });
+          console.error(`Translation failed for ${entityType}/${entityId} ${locale}:${fieldName}: ${message}`);
         }
       })
   );
 
-  await Promise.all(jobs);
+  await runBounded(jobs);
+  return summary;
 }
 
 /**
@@ -154,7 +208,7 @@ export async function syncAttributeTranslations(
   if (targetLocales.length === 0) return;
 
   const jobs: Promise<void>[] = [];
-  const nameLockedKeys = await getHumanLockedKeys("attribute_name", attributeId);
+  const nameLockedKeys = await getHumanLockedKeys(store.id, "attribute_name", attributeId);
 
   for (const locale of targetLocales) {
     // Translate the attribute name, unless a human already corrected it
@@ -193,7 +247,7 @@ export async function syncAttributeTranslations(
     for (const av of values) {
       jobs.push(
         (async () => {
-          const valueLockedKeys = await getHumanLockedKeys("attribute_value", av.id);
+          const valueLockedKeys = await getHumanLockedKeys(store.id, "attribute_value", av.id);
           if (valueLockedKeys.has(`${locale}:value`)) return;
           try {
             const translated = await translateText({

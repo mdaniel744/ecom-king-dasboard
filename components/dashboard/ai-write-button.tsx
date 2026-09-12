@@ -23,6 +23,12 @@ type Props = {
   fieldRole: string;
   /** The store's own language — defaults to this in the dropdown */
   defaultLocale?: string;
+  /** Controlled output language. When set, the parent persists the choice. */
+  targetLocale?: string;
+  /** Actual input language, or "auto" to let the writer detect it. */
+  sourceLocale?: string;
+  /** Product forms use one clearly-labelled shared Writing language selector. */
+  showLocaleSelector?: boolean;
 };
 
 /**
@@ -31,8 +37,17 @@ type Props = {
  * clicks the button — DeepSeek translates AND SEO-optimises the text and
  * fills the field. The result is always editable before saving.
  */
-export function AIWriteButton({ getValue, onResult, fieldRole, defaultLocale = "en" }: Props) {
-  const [locale, setLocale] = useState(defaultLocale);
+export function AIWriteButton({
+  getValue,
+  onResult,
+  fieldRole,
+  defaultLocale = "en",
+  targetLocale,
+  sourceLocale = "en",
+  showLocaleSelector = true,
+}: Props) {
+  const [internalLocale, setInternalLocale] = useState(defaultLocale);
+  const locale = targetLocale ?? internalLocale;
   const [isPending, startTransition] = useTransition();
 
   function handleClick() {
@@ -43,10 +58,7 @@ export function AIWriteButton({ getValue, onResult, fieldRole, defaultLocale = "
     }
 
     startTransition(async () => {
-      // Source is always English when the user is typing in English
-      // (we assume the UI writer's language is "en" — they can change
-      // the target locale to whatever the store needs).
-      const result = await aiWriteField(text, locale, "en", fieldRole);
+      const result = await aiWriteField(text, locale, sourceLocale, fieldRole);
 
       if (result.success) {
         onResult(result.data.text);
@@ -60,18 +72,24 @@ export function AIWriteButton({ getValue, onResult, fieldRole, defaultLocale = "
 
   return (
     <div className="flex items-center gap-1">
-      <Select value={locale} onValueChange={setLocale}>
-        <SelectTrigger className="h-7 w-28 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {CONTENT_LANGUAGE_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="text-xs">
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {showLocaleSelector && (
+        <Select value={locale} onValueChange={setInternalLocale}>
+          <SelectTrigger
+            className="h-7 w-28 text-xs"
+            aria-label="AI output language"
+            title="AI output language (this does not change the store's source language)"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CONTENT_LANGUAGE_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value} className="text-xs">
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <Button
         type="button"
         variant="outline"

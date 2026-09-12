@@ -214,7 +214,8 @@ export function ProductTransferMenu() {
 
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
             Imports include prices, inventory, images and image SEO, attributes, descriptions,
-            search metadata, categories, brands, collections, and product-family links.
+            search metadata, categories, brands, collections, and product-family links. Exported files
+            also carry the writing language so translated stores restore each field correctly.
           </div>
 
           {generalError ? (

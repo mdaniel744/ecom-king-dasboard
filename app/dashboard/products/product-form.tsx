@@ -34,7 +34,7 @@ import type {
 import type { AttributeDef } from "@/lib/attribute-defs";
 import type { ActionResult } from "@/lib/action-result";
 import { CURRENCY_OPTIONS } from "@/lib/currencies";
-import type { MarketPricingSetting } from "@/lib/merchant-locales";
+import { CONTENT_LANGUAGE_OPTIONS, type MarketPricingSetting } from "@/lib/merchant-locales";
 import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
@@ -45,6 +45,7 @@ import { previewMarketPrices, type MarketPricePreview } from "./actions";
 import { stripHtml } from "@/lib/html";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
+import { detectEnglishOrGerman } from "@/lib/product-content-language";
 
 type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
@@ -57,6 +58,7 @@ type Props = {
   attributePresets?: AttributePreset[];
   storeSourceLocale?: string;
   enabledLocales?: string[];
+  contentLanguageOptions?: string[];
   defaultCurrency?: string;
   marketPricing?: MarketPricingSetting[];
   backHref?: string;
@@ -75,6 +77,7 @@ export function ProductForm({
   attributePresets = [],
   storeSourceLocale = "en",
   enabledLocales = [],
+  contentLanguageOptions = [],
   defaultCurrency = "USD",
   marketPricing = [],
   backHref = "/dashboard/products",
@@ -95,6 +98,15 @@ export function ProductForm({
   const [selectedFamilyId, setSelectedFamilyId] = useState(product?.family_id ?? "");
 
   const [name, setName] = useState(product?.name ?? "");
+  const [contentLanguage, setContentLanguage] = useState(() => {
+    if (!product || contentLanguageOptions.length === 0) return storeSourceLocale;
+    const detected = detectEnglishOrGerman(
+      [product.name, product.short_description, product.description].filter(Boolean).join(" ")
+    ).locale;
+    return detected !== "empty" && detected !== "ambiguous" && contentLanguageOptions.includes(detected)
+      ? detected
+      : storeSourceLocale;
+  });
   const [slug, setSlug] = useState(product?.slug ?? "");
   const [slugLocked, setSlugLocked] = useState(!!product?.slug);
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? "");
@@ -339,6 +351,29 @@ export function ProductForm({
               <CardTitle className="text-base">Basic Data</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {contentLanguageOptions.length > 0 && (
+                <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <Label htmlFor="content-language">Writing language</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Language used in the title and descriptions on this form.
+                    </p>
+                  </div>
+                  <input type="hidden" name="content_language" value={contentLanguage} />
+                  <Select value={contentLanguage} onValueChange={setContentLanguage}>
+                    <SelectTrigger id="content-language" className="w-full sm:w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contentLanguageOptions.map((locale) => (
+                        <SelectItem key={locale} value={locale}>
+                          {CONTENT_LANGUAGE_OPTIONS.find((option) => option.value === locale)?.label ?? locale.toUpperCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
                 <div className="flex items-center gap-1.5">
                   <Label className="text-sm">Product Type</Label>
@@ -408,7 +443,7 @@ export function ProductForm({
                       description="The name of your product as it will appear on Google Shopping and your storefront. Be specific and include key details like size, color, or material. Google cuts off titles longer than 150 characters."
                     />
                   </div>
-                  <AIWriteButton getValue={() => name} onResult={setName} fieldRole="name" defaultLocale={storeSourceLocale} />
+                  <AIWriteButton getValue={() => name} onResult={setName} fieldRole="name" targetLocale={contentLanguage} sourceLocale="auto" showLocaleSelector={false} />
                 </div>
                 <Input
                   id="name"
@@ -454,7 +489,7 @@ export function ProductForm({
                       description="A brief 1–2 sentence summary shown on product cards and listings on your storefront. Not sent to Google — this is for your customers browsing your site. Keep it punchy and highlight the key benefit."
                     />
                   </div>
-                  <AIWriteButton getValue={() => shortDescription} onResult={setShortDescription} fieldRole="short_description" defaultLocale={storeSourceLocale} />
+                  <AIWriteButton getValue={() => shortDescription} onResult={setShortDescription} fieldRole="short_description" targetLocale={contentLanguage} sourceLocale="auto" showLocaleSelector={false} />
                 </div>
                 <Input
                   id="short_description"
@@ -479,7 +514,9 @@ export function ProductForm({
                     getValue={() => stripHtml(description)}
                     onResult={(text) => setDescription(plainTextToParagraphHtml(text))}
                     fieldRole="description"
-                    defaultLocale={storeSourceLocale}
+                    targetLocale={contentLanguage}
+                    sourceLocale="auto"
+                    showLocaleSelector={false}
                   />
                 </div>
                 <input type="hidden" name="description" value={description} />
@@ -1007,7 +1044,9 @@ export function ProductForm({
                     getValue={() => googleTitle || name}
                     onResult={(value) => setGoogleTitle(value.slice(0, 150))}
                     fieldRole="google_title"
-                    defaultLocale={storeSourceLocale}
+                    targetLocale={contentLanguage}
+                    sourceLocale="auto"
+                    showLocaleSelector={false}
                   />
                 </div>
                 <Input
@@ -1034,7 +1073,9 @@ export function ProductForm({
                     getValue={() => googleDescription || stripHtml(description) || shortDescription}
                     onResult={(value) => setGoogleDescription(value.slice(0, 5000))}
                     fieldRole="google_description"
-                    defaultLocale={storeSourceLocale}
+                    targetLocale={contentLanguage}
+                    sourceLocale="auto"
+                    showLocaleSelector={false}
                   />
                 </div>
                 <Textarea
@@ -1089,7 +1130,9 @@ export function ProductForm({
                   getValue={() => metaTitle || name}
                   onResult={(value) => setMetaTitle(value.slice(0, 200))}
                   fieldRole="meta_title"
-                  defaultLocale={storeSourceLocale}
+                  targetLocale={contentLanguage}
+                  sourceLocale="auto"
+                  showLocaleSelector={false}
                 />
               </div>
               <Input
@@ -1116,7 +1159,9 @@ export function ProductForm({
                   getValue={() => metaDescription || shortDescription || stripHtml(description)}
                   onResult={(value) => setMetaDescription(value.slice(0, 500))}
                   fieldRole="meta_description"
-                  defaultLocale={storeSourceLocale}
+                  targetLocale={contentLanguage}
+                  sourceLocale="auto"
+                  showLocaleSelector={false}
                 />
               </div>
               <Textarea

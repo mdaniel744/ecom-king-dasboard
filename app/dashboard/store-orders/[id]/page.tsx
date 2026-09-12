@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import {
   ArrowLeft,
   CreditCard,
+  ExternalLink,
   Mail,
-  MapPin,
   Package,
   Phone,
   ReceiptText,
@@ -15,7 +15,6 @@ import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validateId } from "@/lib/validation";
 import {
-  addressLines,
   CHECKOUT_INVOICE_STATUS_LABEL,
   CHECKOUT_ORDER_STATUS_CLASS,
   CHECKOUT_ORDER_STATUS_LABEL,
@@ -23,25 +22,9 @@ import {
   formatOrderMoney,
 } from "@/lib/checkout-order-display";
 import { OrderManagementPanel } from "./order-management-panel";
+import { CustomerAddressDetails } from "@/components/dashboard/customer-address-details";
+import { humanizeKey, readableValue } from "@/lib/inquiry-display";
 import type { CheckoutOrder } from "@/lib/types";
-
-function AddressBlock({ title, address }: { title: string; address: CheckoutOrder["billing_address"] }) {
-  const lines = addressLines(address);
-  return (
-    <div>
-      <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        <MapPin className="h-3 w-3" /> {title}
-      </p>
-      {lines.length ? (
-        <div className="mt-2 space-y-0.5 text-sm">
-          {lines.map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}
-        </div>
-      ) : (
-        <p className="mt-2 text-sm text-muted-foreground">Not provided</p>
-      )}
-    </div>
-  );
-}
 
 export default async function StoreOrderDetailPage({ params }: PageProps<"/dashboard/store-orders/[id]">) {
   const { id } = await params;
@@ -62,6 +45,12 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
 
   if (!data) notFound();
   const order = data as CheckoutOrder;
+  const customerDetailRows = Object.entries(order.customer_details ?? {}).filter(([, value]) =>
+    readableValue(value)
+  );
+  const formRows = Object.entries(order.form_data ?? {}).filter(([, value]) =>
+    readableValue(value)
+  );
 
   return (
     <div>
@@ -102,10 +91,16 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
                 <p className="flex items-center gap-2 text-muted-foreground">
                   <Phone className="h-3.5 w-3.5" /> {order.customer_phone || "—"}
                 </p>
+                {customerDetailRows.map(([key, value]) => (
+                  <p key={key} className="text-muted-foreground">
+                    <span className="font-medium text-foreground">{humanizeKey(key)}:</span>{" "}
+                    {readableValue(value)}
+                  </p>
+                ))}
               </div>
               <div className="grid gap-5 sm:grid-cols-2 sm:col-span-2">
-                <AddressBlock title="Billing address" address={order.billing_address} />
-                <AddressBlock title="Delivery address" address={order.delivery_address} />
+                <CustomerAddressDetails title="Billing address" address={order.billing_address} />
+                <CustomerAddressDetails title="Delivery address" address={order.delivery_address} />
               </div>
             </div>
           </section>
@@ -134,11 +129,44 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
                     <p className="text-sm text-muted-foreground">
                       Quantity {item.quantity}{item.condition ? ` · ${item.condition}` : ""}
                     </p>
-                    {item.brand && <p className="text-xs text-muted-foreground">{item.brand}</p>}
+                    <p className="text-xs text-muted-foreground">
+                      Unit price {formatOrderMoney(item.price, item.currency || order.currency)}
+                      {item.sku ? ` · SKU ${item.sku}` : ""}
+                      {item.brand ? ` · ${item.brand}` : ""}
+                    </p>
+                    {Object.keys(item.attributes ?? {}).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {Object.entries(item.attributes ?? {}).map(([key, value]) => (
+                          <Badge key={key} variant="secondary" className="font-normal">
+                            {humanizeKey(key)}: {readableValue(value)}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {item.product_url && (
+                      <a
+                        href={item.product_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        View storefront product <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
-                  <p className="ml-auto text-right font-medium">
-                    {formatOrderMoney(item.price * item.quantity, order.currency)}
-                  </p>
+                  <div className="ml-auto shrink-0 text-right">
+                    <p className="font-medium">
+                      {formatOrderMoney(
+                        item.line_total ?? item.price * item.quantity,
+                        order.currency
+                      )}
+                    </p>
+                    {item.line_tax_amount != null && (
+                      <p className="text-xs text-muted-foreground">
+                        VAT {formatOrderMoney(item.line_tax_amount, order.currency)}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -152,10 +180,17 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatOrderMoney(order.subtotal, order.currency)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>-{formatOrderMoney(order.discount_amount, order.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span>{formatOrderMoney(order.shipping_amount, order.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{formatOrderMoney(order.tax_amount, order.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Delivery{order.delivery_method ? ` · ${order.delivery_method}` : ""}</span><span>{formatOrderMoney(order.shipping_amount, order.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">VAT{order.tax_rate != null ? ` (${order.tax_rate}%)` : ""}</span><span>{formatOrderMoney(order.tax_amount, order.currency)}</span></div>
               <div className="flex justify-between border-t border-border pt-3 text-base font-semibold"><span>Total</span><span>{formatOrderMoney(order.total_amount, order.currency)}</span></div>
             </div>
+            {(order.market || order.locale) && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                {[order.market && `Market ${order.market}`, order.locale && `Language ${order.locale}`]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
           </section>
 
           <section className="rounded-lg border border-border bg-card p-5">
@@ -173,6 +208,19 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
               <div className="mt-4 border-t border-border pt-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer note</p>
                 <p className="mt-1 whitespace-pre-wrap text-sm">{order.customer_note}</p>
+              </div>
+            )}
+            {formRows.length > 0 && (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Checkout form responses</p>
+                <dl className="mt-2 grid gap-3 text-sm sm:grid-cols-2">
+                  {formRows.map(([key, value]) => (
+                    <div key={key}>
+                      <dt className="text-muted-foreground">{humanizeKey(key)}</dt>
+                      <dd className="mt-0.5 break-words">{readableValue(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
             )}
           </section>

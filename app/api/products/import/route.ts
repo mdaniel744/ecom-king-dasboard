@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentStore } from "@/lib/get-current-store";
 import {
@@ -13,6 +13,13 @@ import {
   type ParsedProductImport,
 } from "@/lib/product-transfer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { TranslationError } from "@/lib/translate";
+import {
+  prepareProductContentForSave,
+  productContentValues,
+  saveIncomingProductTranslations,
+  syncProductTranslations,
+} from "@/lib/product-translation-workflow";
 import type {
   Brand,
   Category,
@@ -23,9 +30,27 @@ import type {
 } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const PAGE_SIZE = 500;
 const ACCEPTED_EXTENSIONS = new Set(["xlsx", "csv", "json"]);
+const TRANSLATION_CONCURRENCY = 2;
+
+async function mapBounded<T, R>(items: T[], worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  let cursor = 0;
+  async function run() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(TRANSLATION_CONCURRENCY, items.length) }, () => run())
+  );
+  return results;
+}
 
 type NamedRelation = { id: string; name: string; slug: string };
 type RelationMaps = {
@@ -314,6 +339,7 @@ export async function POST(request: NextRequest) {
       const existing = idMatch ?? slugMatch ?? null;
       return {
         existing,
+        contentLanguage: product.content_language,
         payload: productPayload(product, store.id, {
           category_id: resolveRelation(
             "category",
@@ -381,20 +407,47 @@ export async function POST(request: NextRequest) {
 
     const created = planned.filter((item) => !item.existing).length;
     const updated = planned.length - created;
+    const preparedRows = await mapBounded(planned, async (item) => {
+      const id = item.existing?.id ?? randomUUID();
+      const prepared = await prepareProductContentForSave({
+        store,
+        declaredLocale: item.contentLanguage,
+        fields: productContentValues(item.payload),
+      });
+      return {
+        id,
+        payload: { ...item.payload, ...prepared.primary, id },
+        incomingTranslations: prepared.incomingTranslations,
+      };
+    });
     const { error: importError } = await supabaseAdmin.from("products").upsert(
-      planned.map((item) => ({
-        ...item.payload,
-        id: item.existing?.id ?? randomUUID(),
-      })),
+      preparedRows.map((item) => item.payload),
       { onConflict: "id" }
     );
     if (importError) throw new Error(`Failed to save imported products: ${importError.message}`);
+
+    await mapBounded(preparedRows, (item) =>
+      saveIncomingProductTranslations(store, item.id, item.incomingTranslations)
+    );
+    after(async () => {
+      await mapBounded(preparedRows, (item) =>
+        syncProductTranslations(store, item.payload as Product, { onlyMissing: true })
+      );
+    });
 
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");
     return NextResponse.json({ ok: true, created, updated, warnings: warnings.slice(0, 25) });
   } catch (error) {
     console.error("Product import failed:", error);
+    if (error instanceof TranslationError) {
+      return NextResponse.json(
+        {
+          error: "No products were imported because at least one row needs language translation and the translation service could not complete it. Check the service and retry the same file.",
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: "The import could not be completed. No further products were processed." },
       { status: 500 }

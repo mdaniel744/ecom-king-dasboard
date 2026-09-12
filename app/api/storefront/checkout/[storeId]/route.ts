@@ -7,7 +7,14 @@ import {
 } from "@/lib/market-pricing";
 import { getStoreMarkets, resolveStorefrontMarket } from "@/lib/merchant-locales";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { CustomerAddress, OrderLineItem, Product, Store } from "@/lib/types";
+import {
+  asCustomerAddress,
+  asFormFieldData,
+  buildStorefrontProductUrl,
+  customerAddressSchema,
+  formFieldDataSchema,
+} from "@/lib/storefront-submissions";
+import type { OrderLineItem, Product, Store } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,19 +23,8 @@ const STORE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 const PRODUCT_UUID = STORE_UUID;
 const MAX_LINE_ITEMS = 50;
 const MAX_QUANTITY_PER_ITEM = 999;
-
-const addressSchema = z
-  .object({
-    full_name: z.string().trim().max(200).optional(),
-    company: z.string().trim().max(200).optional(),
-    address_line_1: z.string().trim().max(300).optional(),
-    address_line_2: z.string().trim().max(300).optional(),
-    city: z.string().trim().max(200).optional(),
-    state: z.string().trim().max(200).optional(),
-    postal_code: z.string().trim().max(50).optional(),
-    country: z.string().trim().max(100).optional(),
-  })
-  .partial();
+const emptyToUndefined = (value: unknown) =>
+  typeof value === "string" && !value.trim() ? undefined : value;
 
 const bodySchema = z.object({
   locale: z.string().trim().toLowerCase().max(20).optional(),
@@ -36,9 +32,13 @@ const bodySchema = z.object({
   customerName: z.string().trim().min(1, "Customer name is required").max(200),
   customerEmail: z.string().trim().email("A valid email is required").max(320),
   customerPhone: z.string().trim().max(50).optional(),
-  billingAddress: addressSchema.optional(),
-  deliveryAddress: addressSchema.optional(),
+  billingAddress: customerAddressSchema.nullish(),
+  deliveryAddress: customerAddressSchema.nullish(),
+  customerDetails: formFieldDataSchema.optional(),
+  formFields: formFieldDataSchema.optional(),
   customerNote: z.string().trim().max(2000).optional(),
+  shippingAmount: z.number().finite().min(0).max(1_000_000_000).optional(),
+  deliveryMethod: z.string().trim().max(200).optional(),
   // Optional -- lets a storefront's own client-generated order reference (e.g.
   // "DC-20260902-0007") become the actual order_number shown in the
   // dashboard, instead of our auto-generated default, so what the customer
@@ -56,6 +56,11 @@ const bodySchema = z.object({
       z.object({
         productId: z.string().regex(PRODUCT_UUID, "Invalid product id"),
         quantity: z.number().int().min(1).max(MAX_QUANTITY_PER_ITEM),
+        productUrl: z.preprocess(
+          emptyToUndefined,
+          z.string().trim().url().max(2000).optional()
+        ),
+        configuration: formFieldDataSchema.optional(),
       })
     )
     .min(1, "At least one line item is required")
@@ -66,6 +71,7 @@ type PricingStore = Pick<
   Store,
   | "id"
   | "slug"
+  | "domain"
   | "google_content_language"
   | "enabled_locales"
   | "google_feed_label"
@@ -73,11 +79,25 @@ type PricingStore = Pick<
   | "market_currencies"
   | "locale_markets"
   | "vat_rates"
+  | "product_url_path"
+  | "product_url_path_overrides"
+  | "source_locale_has_prefix"
 >;
 
 type CheckoutProduct = Pick<
   Product,
-  "id" | "name" | "price" | "currency" | "images" | "condition" | "brand" | "status" | "store_id"
+  | "id"
+  | "name"
+  | "slug"
+  | "price"
+  | "currency"
+  | "images"
+  | "condition"
+  | "brand"
+  | "sku"
+  | "attributes"
+  | "status"
+  | "store_id"
 >;
 
 const corsHeaders = {
@@ -98,11 +118,11 @@ export function OPTIONS() {
 
 /**
  * Creates a real checkout_orders row from a storefront's cart. Mirrors
- * /api/storefront/prices in every trust decision: the client sends only
- * product ids + quantities, never a price -- every amount here is
- * recomputed server-side from the same live product/market/VAT data the
- * pricing endpoint itself uses, so a tampered client request can't produce
- * a wrong total. The two DB triggers already wired to checkout_orders
+ * /api/storefront/prices for product-price trust: the client never sends
+ * product prices -- every product amount and VAT value is recomputed from
+ * live product/market data. A storefront may send its calculated delivery
+ * charge until server-managed delivery rules are added; that value is
+ * stored separately and remains visible to staff. The two DB triggers wired to checkout_orders
  * (auto-invoice email, staff submission notification) fire automatically
  * on insert -- this route only needs to create a correct, trustworthy row.
  */
@@ -144,7 +164,7 @@ export async function POST(
   let storeQuery = supabaseAdmin
     .from("stores")
     .select(
-      "id, slug, google_content_language, enabled_locales, google_feed_label, google_feed_labels, market_currencies, locale_markets, vat_rates"
+      "id, slug, domain, google_content_language, enabled_locales, google_feed_label, google_feed_labels, market_currencies, locale_markets, vat_rates, product_url_path, product_url_path_overrides, source_locale_has_prefix"
     );
   storeQuery = STORE_UUID.test(storeId)
     ? storeQuery.eq("id", storeId)
@@ -187,7 +207,7 @@ export async function POST(
   const productIds = Array.from(new Set(parsed.data.lineItems.map((item) => item.productId)));
   const { data: productData, error: productError } = await supabaseAdmin
     .from("products")
-    .select("id, name, price, currency, images, condition, brand, status, store_id")
+    .select("id, name, slug, price, currency, images, condition, brand, sku, attributes, status, store_id")
     .eq("store_id", store.id)
     .in("id", productIds);
 
@@ -226,6 +246,8 @@ export async function POST(
     const lineItems: OrderLineItem[] = parsed.data.lineItems.map((item) => {
       const product = productsById.get(item.productId)!;
       const converted = converter.convert(product.price!, product.currency);
+      const lineSubtotal = Math.round(converted.netAmount * item.quantity * 100) / 100;
+      const lineTaxAmount = Math.round(lineSubtotal * (converter.vatRate / 100) * 100) / 100;
       return {
         product_id: product.id,
         title: product.name,
@@ -233,16 +255,32 @@ export async function POST(
         currency: converter.currency,
         image: product.images?.[0] ?? null,
         quantity: item.quantity,
+        product_url:
+          buildStorefrontProductUrl(store, product, parsed.data.locale) || item.productUrl || null,
+        sku: product.sku,
+        attributes: {
+          ...(product.attributes ?? {}),
+          ...asFormFieldData(item.configuration),
+        },
+        line_subtotal: lineSubtotal,
+        line_tax_amount: lineTaxAmount,
+        line_total: Math.round((lineSubtotal + lineTaxAmount) * 100) / 100,
         condition: product.condition,
         brand: product.brand ?? undefined,
       };
     });
 
     const subtotal = Math.round(
-      lineItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100
+      lineItems.reduce(
+        (sum, item) => sum + (item.line_subtotal ?? item.price * item.quantity),
+        0
+      ) * 100
     ) / 100;
-    const taxAmount = Math.round(subtotal * (converter.vatRate / 100) * 100) / 100;
-    const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
+    const taxAmount = Math.round(
+      lineItems.reduce((sum, item) => sum + (item.line_tax_amount ?? 0), 0) * 100
+    ) / 100;
+    const shippingAmount = Math.round((parsed.data.shippingAmount ?? 0) * 100) / 100;
+    const totalAmount = Math.round((subtotal + taxAmount + shippingAmount) * 100) / 100;
 
     const { data: order, error: insertError } = await supabaseAdmin
       .from("checkout_orders")
@@ -256,17 +294,25 @@ export async function POST(
         customer_name: parsed.data.customerName,
         customer_email: parsed.data.customerEmail,
         customer_phone: parsed.data.customerPhone || null,
+        customer_details: asFormFieldData(parsed.data.customerDetails),
         line_items: lineItems,
-        billing_address: (parsed.data.billingAddress as CustomerAddress) || null,
-        delivery_address: (parsed.data.deliveryAddress as CustomerAddress) || null,
+        billing_address: asCustomerAddress(parsed.data.billingAddress),
+        delivery_address: asCustomerAddress(parsed.data.deliveryAddress),
         subtotal,
+        discount_amount: 0,
+        shipping_amount: shippingAmount,
         tax_amount: taxAmount,
+        tax_rate: converter.vatRate,
         total_amount: totalAmount,
         currency: converter.currency,
+        market,
+        locale: parsed.data.locale || null,
+        delivery_method: parsed.data.deliveryMethod || null,
+        form_data: asFormFieldData(parsed.data.formFields),
         payment_method: "bank_transfer",
         customer_note: parsed.data.customerNote || null,
       })
-      .select("id, order_number, currency, subtotal, tax_amount, total_amount, order_status, payment_status")
+      .select("id, order_number, currency, subtotal, shipping_amount, tax_amount, tax_rate, total_amount, order_status, payment_status")
       .single();
 
     if (insertError?.code === "23505") {
@@ -290,7 +336,9 @@ export async function POST(
           orderNumber: order.order_number,
           currency: order.currency,
           subtotal: order.subtotal,
+          shippingAmount: order.shipping_amount,
           taxAmount: order.tax_amount,
+          taxRate: order.tax_rate,
           totalAmount: order.total_amount,
           orderStatus: order.order_status,
           paymentStatus: order.payment_status,

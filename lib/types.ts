@@ -326,6 +326,21 @@ export type ProductFamily = {
 
 export type InquiryStatus = "open" | "closed";
 
+export type FormFieldValue = string | number | boolean | null | string[];
+export type FormFieldData = Record<string, FormFieldValue>;
+
+export type InquiryProductSnapshot = {
+  product_id: string | null;
+  name: string;
+  type: string | null;
+  sku: string | null;
+  url: string | null;
+  image: string | null;
+  listed_price: number | null;
+  currency: string | null;
+  attributes: FormFieldData;
+};
+
 export type Inquiry = {
   id: string;
   store_id: string;
@@ -335,8 +350,13 @@ export type Inquiry = {
   customer_email: string | null;
   customer_phone: string | null;
   customer_company?: string | null;
-  customer_address?: Record<string, unknown> | null;
+  customer_address?: CustomerAddress | null;
+  billing_address?: CustomerAddress | null;
+  delivery_address?: CustomerAddress | null;
+  customer_details?: FormFieldData;
   product_url?: string | null;
+  product_snapshot?: InquiryProductSnapshot | null;
+  form_data?: FormFieldData;
   requested_quantity?: number | null;
   message: string | null;
   details: Record<string, unknown>;
@@ -415,15 +435,25 @@ export type PaymentSettings = {
   updated_at: string | null;
 };
 
-export type CustomerAddress = {
+export type CustomerAddress = FormFieldData & {
+  title?: string;
+  first_name?: string;
+  last_name?: string;
   full_name?: string;
   company?: string;
+  email?: string;
+  phone?: string;
+  vat_number?: string;
+  tax_id?: string;
   address_line_1?: string;
   address_line_2?: string;
   city?: string;
   state?: string;
+  county?: string;
   postal_code?: string;
   country?: string;
+  country_code?: string;
+  delivery_instructions?: string;
 };
 
 export type CheckoutOrder = {
@@ -433,6 +463,7 @@ export type CheckoutOrder = {
   customer_name: string;
   customer_email: string;
   customer_phone: string | null;
+  customer_details?: FormFieldData;
   line_items: OrderLineItem[];
   billing_address: CustomerAddress | null;
   delivery_address: CustomerAddress | null;
@@ -440,8 +471,13 @@ export type CheckoutOrder = {
   discount_amount: number;
   shipping_amount: number;
   tax_amount: number;
+  tax_rate?: number;
   total_amount: number;
   currency: string;
+  market?: string | null;
+  locale?: string | null;
+  delivery_method?: string | null;
+  form_data?: FormFieldData;
   payment_method: "bank_transfer";
   payment_status: CheckoutPaymentStatus;
   payment_reference: string | null;
@@ -475,6 +511,12 @@ export type OrderLineItem = {
   currency: string;
   image: string | null;
   quantity: number;
+  product_url?: string | null;
+  sku?: string | null;
+  attributes?: FormFieldData;
+  line_subtotal?: number;
+  line_tax_amount?: number;
+  line_total?: number;
   condition?: string;
   brand?: string;
 };

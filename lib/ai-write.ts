@@ -58,8 +58,11 @@ export async function aiWriteField(
     const fields = validate(aiWriteSchema, { text, targetLocale, sourceLocale, fieldRole });
     const seoGuide = SEO_GUIDE[fields.fieldRole] ?? "Rewrite for SEO. Clear, professional, customer-friendly.";
 
-    const isTranslating = fields.sourceLocale !== fields.targetLocale;
-    const task = isTranslating
+    const sourceIsAutomatic = fields.sourceLocale === "auto";
+    const isTranslating = !sourceIsAutomatic && fields.sourceLocale !== fields.targetLocale;
+    const task = sourceIsAutomatic
+      ? `Detect the input language. Return the result in ${fields.targetLocale}; translate only when necessary, then: ${seoGuide}`
+      : isTranslating
       ? `Translate from ${fields.sourceLocale} to ${fields.targetLocale}, then: ${seoGuide}`
       : `The text is already in ${fields.targetLocale}. Do NOT translate. Instead SEO-rewrite it in the same language: ${seoGuide}`;
 

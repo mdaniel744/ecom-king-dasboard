@@ -3,12 +3,13 @@ import { slugify } from "@/lib/slug";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
 
 export const PRODUCT_BACKUP_SCHEMA = "ecom-king-products";
-export const PRODUCT_BACKUP_VERSION = 1;
+export const PRODUCT_BACKUP_VERSION = 2;
 export const MAX_PRODUCT_IMPORT_ROWS = 5_000;
 export const MAX_PRODUCT_IMPORT_BYTES = 15 * 1024 * 1024;
 
 export const PRODUCT_BACKUP_COLUMNS = [
   { key: "schema_version", description: "Backup schema version. Do not change." },
+  { key: "content_language", description: "Language used by the title and description fields (for example de or en)." },
   { key: "id", description: "Existing product UUID, used to match a product during restore." },
   { key: "name", description: "Product title (required)." },
   { key: "slug", description: "Storefront URL slug (required and unique within the store)." },
@@ -75,7 +76,11 @@ function byId<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
 }
 
-export function buildProductBackupRows(products: Product[], lookups: ProductBackupLookups) {
+export function buildProductBackupRows(
+  products: Product[],
+  lookups: ProductBackupLookups,
+  sourceLocale = "en"
+) {
   const categoryById = byId(lookups.categories);
   const brandById = byId(lookups.brands);
   const collectionById = byId(lookups.collections);
@@ -89,6 +94,7 @@ export function buildProductBackupRows(products: Product[], lookups: ProductBack
 
     return {
       schema_version: PRODUCT_BACKUP_VERSION,
+      content_language: sourceLocale,
       id: product.id,
       name: product.name,
       slug: product.slug,
@@ -200,6 +206,7 @@ function jsonAttributes(value: unknown): Record<string, string> {
 const nullableUuid = z.string().uuid().nullable();
 const importProductSchema = z.object({
   sourceId: nullableUuid,
+  content_language: z.string().min(2).max(10).nullable(),
   name: z.string().min(1, "name is required").max(500),
   slug: z.string().min(1, "slug is required").max(500),
   short_description: z.string().max(2_000).nullable(),
@@ -254,6 +261,7 @@ export function parseProductImportRow(raw: Record<string, unknown>): ParsedProdu
 
   return importProductSchema.parse({
     sourceId: nullableText(raw.id),
+    content_language: nullableText(raw.content_language)?.toLowerCase() ?? null,
     name: requiredText(raw.name),
     slug: slugify(rawSlug),
     short_description: nullableText(raw.short_description),

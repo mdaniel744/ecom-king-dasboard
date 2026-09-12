@@ -45,7 +45,16 @@ export default async function StoreOrdersPage() {
           return (
             <div key={order.id} className="rounded-lg border border-border bg-card p-5">
               <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-                <div className="min-w-0">
+                <div className="flex min-w-0 gap-3">
+                  {order.line_items[0]?.image && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={order.line_items[0].image}
+                      alt=""
+                      className="h-12 w-12 shrink-0 rounded-md border border-border object-cover"
+                    />
+                  )}
+                  <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-mono text-sm font-semibold">{order.order_number}</p>
                     <Badge className={CHECKOUT_ORDER_STATUS_CLASS[order.order_status]}>
@@ -58,6 +67,7 @@ export default async function StoreOrdersPage() {
                     {itemCount} {itemCount === 1 ? "item" : "items"} · {CHECKOUT_PAYMENT_STATUS_LABEL[order.payment_status]}
                     {` · Invoice ${CHECKOUT_INVOICE_STATUS_LABEL[order.invoice_status].toLowerCase()}`}
                   </p>
+                  </div>
                 </div>
                 <div className="flex items-center justify-between gap-4 lg:justify-end">
                   <div className="text-right">

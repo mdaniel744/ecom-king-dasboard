@@ -48,12 +48,16 @@ export function formatOrderMoney(amount: number, currency: string) {
 
 export function addressLines(address: CustomerAddress | null): string[] {
   if (!address) return [];
+  const personName =
+    address.full_name || [address.first_name, address.last_name].filter(Boolean).join(" ");
   return [
-    address.full_name,
+    personName,
     address.company,
     address.address_line_1,
     address.address_line_2,
-    [address.city, address.state, address.postal_code].filter(Boolean).join(", "),
-    address.country,
+    [address.city, address.state || address.county, address.postal_code]
+      .filter(Boolean)
+      .join(", "),
+    address.country || address.country_code,
   ].filter((line): line is string => Boolean(line));
 }

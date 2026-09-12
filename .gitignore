@@ -6,6 +6,7 @@
 # testing
 /coverage
 /tmp/
+/reports/*.json
 
 # next.js
 /.next/

@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { slugify } from "@/lib/slug";
@@ -12,10 +13,16 @@ import {
 } from "@/lib/google-merchant";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
 import { validate, validateId } from "@/lib/validation";
-import { syncTranslations } from "@/lib/translation-sync";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { convertPriceForMarket, CurrencyConversionError } from "@/lib/market-pricing";
 import { getStoreMarketPricing } from "@/lib/merchant-locales";
+import { TranslationError } from "@/lib/translate";
+import {
+  prepareProductContentForSave,
+  productContentValues,
+  saveIncomingProductTranslations,
+  syncProductTranslations,
+} from "@/lib/product-translation-workflow";
 import type { Product, ProductCondition, ProductStatus, Store } from "@/lib/types";
 
 const productPayloadSchema = z.object({
@@ -139,10 +146,28 @@ async function buildProductPayload(formData: FormData, storeId: string) {
   });
 }
 
+function productSaveError(err: unknown): ActionResult<never> {
+  if (err instanceof TranslationError) {
+    return {
+      success: false,
+      error: "The product was not saved because its selected writing language could not be translated. Check the translation service and try again.",
+      fieldErrors: {},
+    };
+  }
+  return toActionResult(err);
+}
+
 export async function createProduct(formData: FormData): Promise<ActionResult> {
   try {
     const store = await getCurrentStore();
-    const payload = await buildProductPayload(formData, store.id);
+    const rawPayload = await buildProductPayload(formData, store.id);
+    const prepared = await prepareProductContentForSave({
+      store,
+      declaredLocale: formData.get("content_language") as string | null,
+      fields: productContentValues(rawPayload),
+      categoryPath: await buildCategoryBreadcrumb(rawPayload.category_id),
+    });
+    const payload = { ...rawPayload, ...prepared.primary };
 
     const { data: product, error } = await supabaseAdmin
       .from("products")
@@ -152,7 +177,10 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 
     if (error) throw error;
 
-    await syncProductTranslations(store, product as Product);
+    await saveIncomingProductTranslations(store, product.id, prepared.incomingTranslations);
+    after(async () => {
+      await syncProductTranslations(store, product as Product);
+    });
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");
     if (payload.family_id) {
@@ -160,7 +188,7 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
     }
     return ok();
   } catch (err) {
-    return toActionResult(err);
+    return productSaveError(err);
   }
 }
 
@@ -168,7 +196,14 @@ export async function updateProduct(productId: string, formData: FormData): Prom
   try {
     productId = validateId(productId);
     const store = await getCurrentStore();
-    const payload = await buildProductPayload(formData, store.id);
+    const rawPayload = await buildProductPayload(formData, store.id);
+    const prepared = await prepareProductContentForSave({
+      store,
+      declaredLocale: formData.get("content_language") as string | null,
+      fields: productContentValues(rawPayload),
+      categoryPath: await buildCategoryBreadcrumb(rawPayload.category_id),
+    });
+    const payload = { ...rawPayload, ...prepared.primary };
     const { data: existingProduct } = await supabaseAdmin
       .from("products")
       .select("family_id")
@@ -186,13 +221,50 @@ export async function updateProduct(productId: string, formData: FormData): Prom
 
     if (error) throw error;
 
-    await syncProductTranslations(store, product as Product);
+    await saveIncomingProductTranslations(store, product.id, prepared.incomingTranslations);
+    after(async () => {
+      await syncProductTranslations(store, product as Product);
+    });
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");
     for (const familyId of new Set([existingProduct?.family_id, payload.family_id])) {
       if (familyId) revalidatePath(`/dashboard/product-families/${familyId}`);
     }
     return ok();
+  } catch (err) {
+    return productSaveError(err);
+  }
+}
+
+export type ProductTranslationRetryResult = {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+};
+
+export async function retryProductTranslations(
+  productId: string
+): Promise<ActionResult<ProductTranslationRetryResult>> {
+  try {
+    productId = validateId(productId);
+    const store = await getCurrentStore();
+    const { data: product, error } = await supabaseAdmin
+      .from("products")
+      .select("*")
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .single();
+    if (error || !product) throw error ?? new Error("Product not found.");
+
+    const result = await syncProductTranslations(store, product as Product);
+    revalidatePath(`/dashboard/products/${productId}/edit`);
+    return ok({
+      attempted: result.attempted,
+      succeeded: result.succeeded,
+      failed: result.failures.length,
+      skipped: result.skipped,
+    });
   } catch (err) {
     return toActionResult(err);
   }
@@ -231,29 +303,6 @@ export async function previewMarketPrices(input: {
     }
     return toActionResult(err);
   }
-}
-
-async function syncProductTranslations(store: Store, product: Product) {
-  const categoryPath = await buildCategoryBreadcrumb(product.category_id);
-  await syncTranslations({
-    store,
-    entityType: "product",
-    entityId: product.id,
-    categoryPath,
-    htmlFields: ["description"],
-    fields: {
-      name: product.name,
-      short_description: product.short_description,
-      description: product.description,
-      meta_title: product.meta_title,
-      meta_description: product.meta_description,
-      badge: product.badge,
-      // Only translated when actually set — most products never set these,
-      // so this is a no-op for every product that doesn't use the override.
-      google_title: product.google_title,
-      google_description: product.google_description,
-    },
-  });
 }
 
 export async function deleteProduct(productId: string): Promise<ActionResult> {
@@ -414,6 +463,13 @@ export async function manageCatalogProducts(input: {
       affectedProducts,
     });
   } catch (err) {
+    if (err instanceof TranslationError) {
+      return {
+        success: false,
+        error: "The product was not saved because its selected writing language could not be translated. Check the translation service and try again.",
+        fieldErrors: {},
+      };
+    }
     return toActionResult(err);
   }
 }

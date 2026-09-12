@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
       brands,
       collections,
       families,
-    });
+    }, store.google_content_language);
     const date = new Date().toISOString().slice(0, 10);
     const baseName = `${slugify(store.name) || "store"}-products-${date}`;
 

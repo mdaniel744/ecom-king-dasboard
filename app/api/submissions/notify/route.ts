@@ -85,6 +85,27 @@ function money(row: Record<string, unknown>) {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function fieldText(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "—";
+}
+
+function configurationSummary(value: unknown) {
+  return Object.entries(asRecord(value))
+    .slice(0, 4)
+    .map(([key, item]) => `${key.replaceAll("_", " ")}: ${fieldText(item)}`)
+    .join(", ");
+}
+
 function lineItemSummary(row: Record<string, unknown>, type: NotificationType) {
   const rawItems = type === "checkout_order" ? row.line_items : row.products;
   if (!Array.isArray(rawItems) || rawItems.length === 0) return "—";
@@ -96,7 +117,8 @@ function lineItemSummary(row: Record<string, unknown>, type: NotificationType) {
       const quantity = Number(typed.quantity);
       const extras = [typed.condition, typed.brand].filter((v) => typeof v === "string" && v);
       const suffix = extras.length ? ` (${extras.join(", ")})` : "";
-      return `${text(typed.title, "Product")} × ${Number.isFinite(quantity) ? quantity : 1}${suffix}`;
+      const configuration = configurationSummary(typed.attributes);
+      return `${text(typed.title, "Product")}${configuration ? ` (${configuration})` : ""} × ${Number.isFinite(quantity) ? quantity : 1}${suffix}`;
     })
     .join(", ");
 }
@@ -109,13 +131,18 @@ function addressSummary(address: unknown): string | null {
 
 function notificationDetails(type: NotificationType, row: Record<string, unknown>) {
   if (type === "inquiry") {
+    const details = asRecord(row.details);
+    const product = asRecord(row.product_snapshot ?? details.product);
+    const configuration = configurationSummary(product.attributes ?? details.configuration);
+    const productSummary = text(product.name, "Product inquiry");
+    const message = text(row.message, "No message supplied");
     return {
       heading: "New customer inquiry",
       reference: text(row.inquiry_number, `Inquiry ${String(row.id).slice(0, 8)}`),
       customerName: text(row.customer_name, "Anonymous customer"),
       customerEmail: text(row.customer_email),
       customerPhone: text(row.customer_phone),
-      summary: text(row.message, "No message supplied"),
+      summary: `${productSummary}${configuration ? ` (${configuration})` : ""} — ${message}`,
       amount: null,
       billingAddress: null,
       deliveryAddress: null,

@@ -4,8 +4,8 @@ import {
   ArrowLeft,
   Building2,
   ExternalLink,
+  ImageIcon,
   Mail,
-  MapPin,
   Package,
   Phone,
   UserRound,
@@ -21,25 +21,20 @@ import {
   readableValue,
 } from "@/lib/inquiry-display";
 import { InquiryManagementPanel } from "./inquiry-management-panel";
-import type { Inquiry, Product } from "@/lib/types";
+import { CustomerAddressDetails } from "@/components/dashboard/customer-address-details";
+import type { CustomerAddress, Inquiry, Product } from "@/lib/types";
 
 type InquiryProduct = Pick<
   Product,
-  "id" | "name" | "slug" | "price" | "currency" | "sku" | "images"
+  "id" | "name" | "slug" | "price" | "currency" | "sku" | "images" | "attributes"
 >;
 
-function addressText(value: unknown) {
-  const address = asRecord(value);
-  return [
-    readableValue(address.address_line_1 ?? address.street),
-    readableValue(address.address_line_2),
-    readableValue(address.city),
-    readableValue(address.state),
-    readableValue(address.postal_code ?? address.postcode),
-    readableValue(address.country),
-  ]
-    .filter(Boolean)
-    .join(", ");
+function formatMoney(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
 }
 
 export default async function InquiryDetailPage({ params }: PageProps<"/dashboard/inquiries/[id]">) {
@@ -66,7 +61,7 @@ export default async function InquiryDetailPage({ params }: PageProps<"/dashboar
   if (inquiry.product_id) {
     const { data: productData } = await supabaseAdmin
       .from("products")
-      .select("id, name, slug, price, currency, sku, images")
+      .select("id, name, slug, price, currency, sku, images, attributes")
       .eq("id", inquiry.product_id)
       .eq("store_id", store.id)
       .single();
@@ -76,19 +71,37 @@ export default async function InquiryDetailPage({ params }: PageProps<"/dashboar
   const details = asRecord(inquiry.details);
   const customerDetails = asRecord(details.customer);
   const productDetails = asRecord(details.product);
+  const productSnapshot = asRecord(inquiry.product_snapshot ?? productDetails);
   const requestDetails = asRecord(
     details.price_request_form ?? details.price_on_request ?? details.request
+  );
+  const formData = {
+    ...requestDetails,
+    ...asRecord(details.form_fields),
+    ...asRecord(inquiry.form_data),
+  };
+  const configuration = {
+    ...(product?.attributes ?? {}),
+    ...asRecord(productSnapshot.attributes),
+    ...asRecord(details.configuration),
+  };
+  const customerDetailRows = Object.entries({
+    ...customerDetails,
+    ...asRecord(inquiry.customer_details),
+  }).filter(
+    ([key, value]) =>
+      !["name", "email", "phone", "company", "address"].includes(key) && readableValue(value)
   );
 
   const customerName =
     inquiry.customer_name ?? readableValue(customerDetails.name) ?? "Anonymous customer";
   const company =
     inquiry.customer_company ?? readableValue(customerDetails.company ?? details.company);
-  const address =
-    addressText(inquiry.customer_address) ||
-    addressText(customerDetails.address ?? details.customer_address);
   const requestedProductName =
-    product?.name ?? readableValue(productDetails.name ?? details.product_name) ?? "General inquiry";
+    readableValue(productSnapshot.name) ??
+    product?.name ??
+    readableValue(productDetails.name ?? details.product_name) ??
+    "General inquiry";
   const configuredDomain = store.domain
     ? store.domain.startsWith("http")
       ? store.domain
@@ -96,11 +109,36 @@ export default async function InquiryDetailPage({ params }: PageProps<"/dashboar
     : null;
   const productUrl =
     inquiry.product_url ??
-    readableValue(productDetails.url ?? details.product_url) ??
+    readableValue(productSnapshot.url ?? productDetails.url ?? details.product_url) ??
     (configuredDomain && product
       ? `${configuredDomain.replace(/\/$/, "")}/${store.product_url_path}/${product.slug}`
       : null);
-  const formRows = Object.entries(requestDetails).flatMap(([key, value]) => {
+  const productImage =
+    readableValue(productSnapshot.image) ?? product?.images?.[0] ?? null;
+  const productType = readableValue(productSnapshot.type);
+  const productSku = readableValue(productSnapshot.sku) ?? product?.sku ?? null;
+  const listedPriceRaw = productSnapshot.listed_price ?? product?.price;
+  const listedPrice = typeof listedPriceRaw === "number" ? listedPriceRaw : Number(listedPriceRaw);
+  const listedCurrency =
+    readableValue(productSnapshot.currency) ?? product?.currency ?? null;
+  const billingAddress = (
+    inquiry.billing_address ??
+    details.billing_address ??
+    customerDetails.billing_address ??
+    inquiry.customer_address ??
+    null
+  ) as CustomerAddress | null;
+  const deliveryAddress = (
+    inquiry.delivery_address ??
+    details.delivery_address ??
+    customerDetails.delivery_address ??
+    null
+  ) as CustomerAddress | null;
+  const configurationRows = Object.entries(configuration).flatMap(([key, value]) => {
+    const readable = readableValue(value);
+    return readable ? [{ label: humanizeKey(key), value: readable }] : [];
+  });
+  const formRows = Object.entries(formData).flatMap(([key, value]) => {
     const readable = readableValue(value);
     return readable ? [{ label: humanizeKey(key), value: readable }] : [];
   });
@@ -160,12 +198,18 @@ export default async function InquiryDetailPage({ params }: PageProps<"/dashboar
                 </p>
                 <p className="mt-1">{inquiry.customer_phone ?? readableValue(customerDetails.phone) ?? "—"}</p>
               </div>
-              <div className="sm:col-span-2">
-                <p className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  <MapPin className="h-3 w-3" /> Address
-                </p>
-                <p className="mt-1">{address || "—"}</p>
-              </div>
+              {customerDetailRows.map(([key, value]) => (
+                <div key={key}>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {humanizeKey(key)}
+                  </p>
+                  <p className="mt-1 break-words">{readableValue(value)}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <CustomerAddressDetails title="Billing address" address={billingAddress} />
+              <CustomerAddressDetails title="Delivery address" address={deliveryAddress} />
             </div>
           </section>
 
@@ -175,20 +219,25 @@ export default async function InquiryDetailPage({ params }: PageProps<"/dashboar
               <h2 className="font-semibold">Product information</h2>
             </div>
             <div className="mt-4 flex gap-4">
-              {product?.images?.[0] && (
+              {productImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={product.images[0]}
+                  src={productImage}
                   alt=""
                   className="h-20 w-20 rounded-md border border-border object-cover"
                 />
+              ) : (
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                </div>
               )}
               <div className="min-w-0 space-y-1 text-sm">
                 <p className="font-medium">{requestedProductName}</p>
-                {product?.sku && <p className="text-muted-foreground">SKU: {product.sku}</p>}
-                {product?.price != null && (
+                <p className="text-muted-foreground">Type: {productType || "—"}</p>
+                <p className="text-muted-foreground">SKU: {productSku || "—"}</p>
+                {Number.isFinite(listedPrice) && listedCurrency && (
                   <p className="text-muted-foreground">
-                    Listed price: {product.price} {product.currency}
+                    Listed price: {formatMoney(listedPrice, listedCurrency)}
                   </p>
                 )}
                 {productUrl && (
@@ -203,10 +252,27 @@ export default async function InquiryDetailPage({ params }: PageProps<"/dashboar
                 )}
               </div>
             </div>
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Selected product configuration
+              </p>
+              {configurationRows.length > 0 ? (
+                <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                  {configurationRows.map((row) => (
+                    <div key={row.label}>
+                      <dt className="text-muted-foreground">{row.label}</dt>
+                      <dd className="mt-0.5 break-words font-medium">{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">No configuration supplied.</p>
+              )}
+            </div>
           </section>
 
           <section className="rounded-lg border border-border bg-card p-5">
-            <h2 className="font-semibold">Price on Request form</h2>
+            <h2 className="font-semibold">Request form responses</h2>
             <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Requested quantity</p>

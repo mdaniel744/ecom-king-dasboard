@@ -6,7 +6,8 @@
     "dev": "next dev -p 9915",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:translations": "node --test tests/product-content-language.test.mjs"
   },
   "dependencies": {
     "@clerk/backend": "^3.16.1",
