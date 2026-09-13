@@ -1,4 +1,5 @@
 import type { Store } from "@/lib/types";
+import { KARIV_GLAMOUR_STORE_ID } from "./tenant-ids.js";
 
 // Curated subsets of Google Merchant's supported content languages and
 // target countries (feed labels). Not exhaustive — Google supports more —
@@ -147,6 +148,40 @@ export function resolveStorefrontMarket(
   if (explicitMarket && markets.includes(explicitMarket)) return explicitMarket;
   if (markets.length === 1) return markets[0];
   return null;
+}
+
+const KARIV_MARKET_BY_LOCALE: Record<string, string> = {
+  en: "DE",
+  de: "DE",
+  cs: "CZ",
+};
+
+/**
+ * Resolves the market a public price/checkout request is allowed to use.
+ * Kariv is intentionally stricter than the generic multi-tenant behavior:
+ * its selected storefront language is the only currency switch. An explicit
+ * market cannot turn English or German into CZK, and country/IP data is never
+ * consulted here.
+ */
+export function resolveRequestedStorefrontMarket(
+  store: LocaleMarketStore & Pick<Store, "id">,
+  requestedLocale?: string,
+  requestedMarket?: string
+): string | null {
+  const markets = getStoreMarkets(store);
+  const explicitMarket = requestedMarket?.trim().toUpperCase();
+
+  if (store.id === KARIV_GLAMOUR_STORE_ID) {
+    const locale = (requestedLocale || store.google_content_language).trim().toLowerCase().split("-")[0];
+    const expectedMarket = KARIV_MARKET_BY_LOCALE[locale];
+    if (!expectedMarket || !markets.includes(expectedMarket)) return null;
+    if (explicitMarket && explicitMarket !== expectedMarket) return null;
+    return expectedMarket;
+  }
+
+  if (explicitMarket) return markets.includes(explicitMarket) ? explicitMarket : null;
+  if (requestedLocale) return resolveStorefrontMarket(store, requestedLocale);
+  return markets[0] ?? null;
 }
 
 export type MarketPricingSetting = {

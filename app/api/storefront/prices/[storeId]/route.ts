@@ -8,7 +8,7 @@ import {
 import {
   defaultCurrencyForMarket,
   getStoreMarkets,
-  resolveStorefrontMarket,
+  resolveRequestedStorefrontMarket,
 } from "@/lib/merchant-locales";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Product, Store } from "@/lib/types";
@@ -156,15 +156,17 @@ export async function GET(
     );
   }
 
-  const market =
-    parsed.data.market ||
-    (requestedLocale ? resolveStorefrontMarket(store, requestedLocale) : configuredMarkets[0]);
+  const market = resolveRequestedStorefrontMarket(
+    store,
+    requestedLocale,
+    parsed.data.market
+  );
   if (!market) {
     return json(
       {
         error:
-          `No delivery market is linked to storefront locale "${requestedLocale}". ` +
-          "Link it under Delivery Markets or send an explicit market code.",
+          `The storefront locale/market selection is not enabled for this store. ` +
+          "For Kariv, Czech uses CZ/CZK while English and German use DE/EUR.",
       },
       { status: 422 }
     );

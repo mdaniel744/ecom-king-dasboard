@@ -4,6 +4,7 @@ import { sendMail, resolveStoreSmtp } from "@/lib/mailer";
 import { addressLines, formatOrderMoney } from "@/lib/checkout-order-display";
 import { defaultInvoiceSettings } from "@/lib/invoice-settings-defaults";
 import { defaultPaymentSettings } from "@/lib/payment-settings-defaults";
+import { bankTransferForCurrency } from "@/lib/payment-currency";
 import type { CheckoutOrder, InvoiceSettings, PaymentSettings, Store } from "@/lib/types";
 
 function escapeHtml(value: unknown) {
@@ -84,16 +85,25 @@ export async function sendCheckoutInvoiceEmail(
       ? `<div style="flex:1;min-width:220px;"><strong>Delivery address</strong><p style="line-height:1.6;">${delivery}</p></div>`
       : "",
   ].filter(Boolean).join("");
-  const bankPaymentDetails = payments.bank_transfer_enabled
+  const bankCurrency = bankTransferForCurrency(payments, order.currency);
+  const bankPaymentDetails = payments.bank_transfer_enabled && bankCurrency.supported
     ? [
         payments.bank_name ? `<strong>${escapeHtml(payments.bank_name)}</strong>` : "",
         payments.bank_account_name ? `Account name: ${escapeHtml(payments.bank_account_name)}` : "",
         payments.bank_account_number ? `Account number: ${escapeHtml(payments.bank_account_number)}` : "",
-        payments.bank_currency ? `Currency: ${escapeHtml(payments.bank_currency)}` : "",
+        `Transfer currency: ${escapeHtml(order.currency)}`,
         payments.bank_iban ? `IBAN: ${escapeHtml(payments.bank_iban)}` : "",
         payments.bank_swift_bic ? `SWIFT / BIC: ${escapeHtml(payments.bank_swift_bic)}` : "",
-        payments.bank_instructions ? htmlLines(payments.bank_instructions) : "",
+        bankCurrency.instructions
+          ? htmlLines(bankCurrency.instructions)
+          : payments.bank_instructions
+            ? htmlLines(payments.bank_instructions)
+            : "",
       ].filter(Boolean).join("<br>")
+    : "";
+  const bankPaymentUnavailable = payments.bank_transfer_enabled && !bankCurrency.supported
+    ? `Bank-transfer instructions for ${escapeHtml(order.currency)} are not configured. ` +
+      `Please contact ${escapeHtml(settings.business_email || store.notification_email || store.name)} before paying.`
     : "";
   const paymentTerms = settings.payment_terms || `Payment due within ${settings.due_days} days.`;
   const deliveryTerms = settings.delivery_terms || "Delivery timing will be confirmed with your order.";
@@ -145,6 +155,7 @@ export async function sendCheckoutInvoiceEmail(
               <td style="width:50%;padding:18px 0 0 18px;vertical-align:top;"><strong style="color:${accentColor};">Terms &amp; instructions</strong><p style="line-height:1.6;color:#4b5563;">${settings.commercial_terms ? htmlLines(settings.commercial_terms) : escapeHtml(paymentTerms)}</p></td>
             </tr>
           </table>
+          ${bankPaymentUnavailable ? `<div style="margin-top:16px;padding:12px 14px;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;"><strong>Payment setup required</strong><br>${bankPaymentUnavailable}</div>` : ""}
         </div>
         <div style="border-top:2px solid ${accentColor};padding:18px 24px;color:${isCorporate ? "rgba(255,255,255,.76)" : "#6b7280"};background:${isCorporate ? accentColor : "#ffffff"};font-size:11px;line-height:1.6;">
           <table role="presentation" style="width:100%;border-collapse:collapse;">

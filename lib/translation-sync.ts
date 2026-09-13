@@ -19,6 +19,9 @@ type SyncParams = {
   /** Preserve existing AI rows too. Used by imports/retries so a large batch
    * only fills gaps instead of paying to regenerate completed work. */
   onlyMissing?: boolean;
+  /** Source fields changed by this save. Human translations for these fields
+   * stay untouched but are marked for review. */
+  sourceChangedFields?: string[];
 };
 
 export type TranslationSyncSummary = {
@@ -88,6 +91,7 @@ export async function syncTranslations({
   categoryPath,
   htmlFields = [],
   onlyMissing = false,
+  sourceChangedFields = [],
 }: SyncParams): Promise<TranslationSyncSummary> {
   const summary: TranslationSyncSummary = { attempted: 0, succeeded: 0, skipped: 0, failures: [] };
   const sourceLocale = store.google_content_language || "en";
@@ -100,6 +104,26 @@ export async function syncTranslations({
   if (fieldEntries.length === 0) return summary;
 
   const lockedKeys = await getHumanLockedKeys(store.id, entityType, entityId);
+  if (sourceChangedFields.length > 0) {
+    const changed = [...new Set(sourceChangedFields)].filter(Boolean);
+    if (changed.length > 0) {
+      const { error } = await supabaseAdmin
+        .from("translations")
+        .update({ needs_review: true })
+        .eq("store_id", store.id)
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId)
+        .eq("translator", "human")
+        .in("field_name", changed);
+      if (error) {
+        summary.failures.push({
+          locale: "human",
+          fieldName: changed.join(","),
+          message: `Human translation review flags could not be updated: ${error.message}`,
+        });
+      }
+    }
+  }
   const existingKeys = new Set<string>();
   if (onlyMissing) {
     const { data } = await supabaseAdmin
@@ -141,6 +165,7 @@ export async function syncTranslations({
               locale,
               value: translated,
               translator: "ai",
+              needs_review: false,
             },
             { onConflict: "entity_type,entity_id,field_name,locale" }
           );
@@ -165,6 +190,7 @@ export async function syncTranslations({
                   locale,
                   value: slugify(translated),
                   translator: "ai",
+                  needs_review: false,
                 },
                 { onConflict: "entity_type,entity_id,field_name,locale" }
               );

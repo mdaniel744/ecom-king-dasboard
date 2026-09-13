@@ -17,6 +17,11 @@ const paymentSettingsSchema = z.object({
   bankAccountNumber: optionalText(100),
   bankCountry: optionalText(100),
   bankCurrency: z.string().trim().min(3).max(3).regex(/^[A-Za-z]{3}$/),
+  bankSupportedCurrencies: z.array(z.string().regex(/^[A-Z]{3}$/)).max(20),
+  bankCurrencyInstructions: z.record(
+    z.string().regex(/^[A-Z]{3}$/),
+    z.string().trim().max(3000)
+  ),
   bankIban: optionalText(100),
   bankSwiftBic: optionalText(50),
   bankInstructions: optionalText(3000),
@@ -31,6 +36,7 @@ const paymentSettingsSchema = z.object({
     if (!values.bankName) context.addIssue({ code: "custom", path: ["bankName"], message: "Bank name is required when bank transfer is enabled" });
     if (!values.bankAccountName) context.addIssue({ code: "custom", path: ["bankAccountName"], message: "Account name is required when bank transfer is enabled" });
     if (!values.bankAccountNumber) context.addIssue({ code: "custom", path: ["bankAccountNumber"], message: "Account number is required when bank transfer is enabled" });
+    if (values.bankSupportedCurrencies.length === 0) context.addIssue({ code: "custom", path: ["bankSupportedCurrencies"], message: "Confirm at least one currency this account accepts" });
   }
   if (values.cardEnabled && !values.cardProvider) {
     context.addIssue({ code: "custom", path: ["cardProvider"], message: "Select a card provider before enabling card payments" });
@@ -47,6 +53,8 @@ export type PaymentSettingsValues = {
   bankAccountNumber: string;
   bankCountry: string;
   bankCurrency: string;
+  bankSupportedCurrencies: string[];
+  bankCurrencyInstructions: Record<string, string>;
   bankIban: string;
   bankSwiftBic: string;
   bankInstructions: string;
@@ -71,6 +79,14 @@ export async function updatePaymentSettings(
       bankAccountNumber: nullable(values.bankAccountNumber),
       bankCountry: nullable(values.bankCountry),
       bankCurrency: values.bankCurrency.trim().toUpperCase(),
+      bankSupportedCurrencies: Array.from(new Set(
+        values.bankSupportedCurrencies.map((currency) => currency.trim().toUpperCase()).filter(Boolean)
+      )),
+      bankCurrencyInstructions: Object.fromEntries(
+        Object.entries(values.bankCurrencyInstructions)
+          .map(([currency, instructions]) => [currency.trim().toUpperCase(), instructions.trim()])
+          .filter(([currency, instructions]) => /^[A-Z]{3}$/.test(currency) && Boolean(instructions))
+      ),
       bankIban: nullable(values.bankIban),
       bankSwiftBic: nullable(values.bankSwiftBic),
       bankInstructions: nullable(values.bankInstructions),
@@ -88,6 +104,8 @@ export async function updatePaymentSettings(
       bank_account_number: fields.bankAccountNumber,
       bank_country: fields.bankCountry,
       bank_currency: fields.bankCurrency,
+      bank_supported_currencies: fields.bankSupportedCurrencies,
+      bank_currency_instructions: fields.bankCurrencyInstructions,
       bank_iban: fields.bankIban,
       bank_swift_bic: fields.bankSwiftBic,
       bank_instructions: fields.bankInstructions,

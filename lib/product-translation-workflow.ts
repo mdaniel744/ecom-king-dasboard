@@ -29,10 +29,21 @@ export function productContentValues(product: Pick<Product, ProductContentField>
   ) as ProductContentValues;
 }
 
+export function changedProductContentFields(
+  before: Partial<ProductContentValues> | null | undefined,
+  after: ProductContentValues
+): ProductContentField[] {
+  if (!before) return [];
+  return PRODUCT_CONTENT_FIELDS.filter(
+    (field) => String(before[field] ?? "").trim() !== String(after[field] ?? "").trim()
+  );
+}
+
 /**
- * Kariv's primary product columns are German. If an operator explicitly
- * writes/imports English, translate that content to German before mutating
- * the product row and preserve the original English in translations.
+ * Kariv's primary product columns follow the tenant's configured source
+ * language (English). If an operator explicitly writes/imports in an enabled
+ * target language, translate that content back to English before mutating
+ * the product row and preserve the operator's original target-language copy.
  * Other tenants retain the existing source-language behaviour unchanged.
  */
 export async function prepareProductContentForSave({
@@ -89,6 +100,7 @@ export async function saveIncomingProductTranslations(
       value: translation.value,
       // This is the operator/import file's original copy, not generated text.
       translator: "human",
+      needs_review: false,
     })),
     { onConflict: "entity_type,entity_id,field_name,locale" }
   );
@@ -98,7 +110,7 @@ export async function saveIncomingProductTranslations(
 export async function syncProductTranslations(
   store: Store,
   product: Product,
-  options?: { onlyMissing?: boolean }
+  options?: { onlyMissing?: boolean; sourceChangedFields?: ProductContentField[] }
 ): Promise<TranslationSyncSummary> {
   let categoryPath: string | null = null;
   if (product.category_id) {
@@ -128,6 +140,7 @@ export async function syncProductTranslations(
     categoryPath,
     htmlFields: ["description"],
     onlyMissing: options?.onlyMissing,
+    sourceChangedFields: options?.sourceChangedFields,
     fields: productContentValues(product),
   });
 }

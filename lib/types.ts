@@ -103,6 +103,7 @@ export type Translation = {
   locale: string;
   value: string;
   translator: "ai" | "human";
+  needs_review: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -422,6 +423,10 @@ export type PaymentSettings = {
   bank_account_number: string | null;
   bank_country: string | null;
   bank_currency: string;
+  /** Currencies this receiving account has been verified to accept. */
+  bank_supported_currencies: string[];
+  /** Optional payment wording keyed by ISO currency code. */
+  bank_currency_instructions: Record<string, string>;
   bank_iban: string | null;
   bank_swift_bic: string | null;
   bank_instructions: string | null;
@@ -519,6 +524,12 @@ export type OrderLineItem = {
   line_total?: number;
   condition?: string;
   brand?: string;
+  /** Immutable server-side pricing evidence captured when the order was created. */
+  source_price?: number;
+  source_currency?: string;
+  exchange_rate?: number;
+  rate_date?: string | null;
+  rate_source?: "ECB" | "CNB" | null;
 };
 
 export type Order = {
@@ -533,6 +544,14 @@ export type Order = {
   products: OrderLineItem[];
   total_amount: number;
   currency: string;
+  /** Explicit dealer payout snapshot. Required before funds can be released
+   * when a dealer is attached; historic order totals remain untouched. */
+  settlement_currency?: string | null;
+  settlement_amount?: number | null;
+  settlement_exchange_rate?: number | null;
+  settlement_rate_date?: string | null;
+  settlement_rate_source?: "CNB" | "ECB" | "provider" | null;
+  settlement_notes?: string | null;
   payment_method: OrderPaymentMethod;
   payment_reference: string | null;
   escrow_status: OrderEscrowStatus;

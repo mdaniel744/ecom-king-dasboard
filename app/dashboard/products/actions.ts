@@ -19,6 +19,7 @@ import { getStoreMarketPricing } from "@/lib/merchant-locales";
 import { TranslationError } from "@/lib/translate";
 import {
   prepareProductContentForSave,
+  changedProductContentFields,
   productContentValues,
   saveIncomingProductTranslations,
   syncProductTranslations,
@@ -206,7 +207,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     const payload = { ...rawPayload, ...prepared.primary };
     const { data: existingProduct } = await supabaseAdmin
       .from("products")
-      .select("family_id")
+      .select("family_id, name, short_description, description")
       .eq("id", productId)
       .eq("store_id", store.id)
       .maybeSingle();
@@ -222,8 +223,12 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     if (error) throw error;
 
     await saveIncomingProductTranslations(store, product.id, prepared.incomingTranslations);
+    const sourceChangedFields =
+      prepared.actualLocale === store.google_content_language
+        ? changedProductContentFields(existingProduct, prepared.primary)
+        : [];
     after(async () => {
-      await syncProductTranslations(store, product as Product);
+      await syncProductTranslations(store, product as Product, { sourceChangedFields });
     });
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");

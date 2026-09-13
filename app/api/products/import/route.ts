@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { TranslationError } from "@/lib/translate";
 import {
   prepareProductContentForSave,
+  changedProductContentFields,
   productContentValues,
   saveIncomingProductTranslations,
   syncProductTranslations,
@@ -416,6 +417,11 @@ export async function POST(request: NextRequest) {
       });
       return {
         id,
+        isUpdate: Boolean(item.existing),
+        sourceChangedFields:
+          item.existing && prepared.actualLocale === store.google_content_language
+            ? changedProductContentFields(item.existing, prepared.primary)
+            : [],
         payload: { ...item.payload, ...prepared.primary, id },
         incomingTranslations: prepared.incomingTranslations,
       };
@@ -431,7 +437,10 @@ export async function POST(request: NextRequest) {
     );
     after(async () => {
       await mapBounded(preparedRows, (item) =>
-        syncProductTranslations(store, item.payload as Product, { onlyMissing: true })
+        syncProductTranslations(store, item.payload as Product, {
+          onlyMissing: !item.isUpdate,
+          sourceChangedFields: item.sourceChangedFields,
+        })
       );
     });
 

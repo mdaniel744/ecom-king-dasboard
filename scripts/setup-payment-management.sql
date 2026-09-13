@@ -10,6 +10,8 @@ create table if not exists public.payment_settings (
   bank_country text,
   bank_currency text not null default 'USD'
     check (bank_currency ~ '^[A-Z]{3}$'),
+  bank_supported_currencies text[] not null default '{}',
+  bank_currency_instructions jsonb not null default '{}'::jsonb,
   bank_iban text,
   bank_swift_bic text,
   bank_instructions text,
@@ -23,6 +25,14 @@ create table if not exists public.payment_settings (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.payment_settings
+  add column if not exists bank_supported_currencies text[] not null default '{}',
+  add column if not exists bank_currency_instructions jsonb not null default '{}'::jsonb;
+
+update public.payment_settings
+set bank_supported_currencies = array[bank_currency]
+where cardinality(bank_supported_currencies) = 0;
 
 alter table public.payment_settings enable row level security;
 

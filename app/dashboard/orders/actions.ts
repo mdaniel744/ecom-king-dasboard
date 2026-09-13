@@ -12,7 +12,7 @@ import { stripHtml } from "@/lib/html";
 import { makeEmailSafeHtml } from "@/lib/email-html";
 import { validate, validateId } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
-import type { OrderEscrowStatus } from "@/lib/types";
+import type { Order, OrderEscrowStatus } from "@/lib/types";
 
 const ESCROW_STATUSES: OrderEscrowStatus[] = [
   "pending_review",
@@ -49,6 +49,26 @@ export async function updateOrderEscrowStatus(orderId: string, escrowStatus: str
     const store = await getCurrentStore();
     const fields = validate(escrowStatusSchema, { orderId, escrowStatus });
 
+    const { data: current, error: fetchError } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", fields.orderId)
+      .eq("store_id", store.id)
+      .single();
+    if (fetchError || !current) throw fetchError ?? new Error("Order not found.");
+    const currentOrder = current as Order;
+    if (
+      fields.escrowStatus === "funds_released" &&
+      currentOrder.dealer_user_id &&
+      (!currentOrder.settlement_currency || currentOrder.settlement_amount == null)
+    ) {
+      return {
+        success: false,
+        error: "Save the dealer settlement currency and amount before releasing funds.",
+        fieldErrors: {},
+      };
+    }
+
     const { data: order, error } = await supabaseAdmin
       .from("orders")
       .update({ escrow_status: fields.escrowStatus, updated_at: new Date().toISOString() })
@@ -70,6 +90,67 @@ export async function updateOrderEscrowStatus(orderId: string, escrowStatus: str
     }
 
     revalidatePath("/dashboard/orders");
+    return ok();
+  } catch (err) {
+    return toActionResult(err);
+  }
+}
+
+const settlementSchema = z.object({
+  orderId: z.string().uuid(),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "Use a 3-letter currency code."),
+  amount: z.number().finite().nonnegative(),
+  exchangeRate: z.number().finite().positive().nullable(),
+  rateDate: z.string().date().nullable(),
+  rateSource: z.enum(["CNB", "ECB", "provider"]).nullable(),
+  notes: z.string().trim().max(2000).nullable(),
+});
+
+export async function saveDealerSettlement(
+  orderId: string,
+  values: { currency: string; amount: number; exchangeRate: number | null; rateDate: string; rateSource: string; notes: string }
+): Promise<ActionResult> {
+  try {
+    const store = await getCurrentStore();
+    const fields = validate(settlementSchema, {
+      orderId,
+      currency: values.currency,
+      amount: values.amount,
+      exchangeRate: values.exchangeRate,
+      rateDate: values.rateDate || null,
+      rateSource: values.rateSource || null,
+      notes: values.notes || null,
+    });
+    const { data: order, error: fetchError } = await supabaseAdmin
+      .from("orders")
+      .select("id, dealer_user_id, currency")
+      .eq("id", fields.orderId)
+      .eq("store_id", store.id)
+      .single();
+    if (fetchError || !order?.dealer_user_id) {
+      return { success: false, error: "Dealer order not found.", fieldErrors: {} };
+    }
+    if (
+      fields.currency !== String(order.currency).toUpperCase() &&
+      (!fields.exchangeRate || !fields.rateDate || !fields.rateSource)
+    ) {
+      return {
+        success: false,
+        error: "A different settlement currency requires a verified rate, rate date, and source.",
+        fieldErrors: {},
+      };
+    }
+    const { error } = await supabaseAdmin.from("orders").update({
+      settlement_currency: fields.currency,
+      settlement_amount: fields.amount,
+      settlement_exchange_rate: fields.currency === String(order.currency).toUpperCase() ? 1 : fields.exchangeRate,
+      settlement_rate_date: fields.currency === String(order.currency).toUpperCase() ? null : fields.rateDate,
+      settlement_rate_source: fields.currency === String(order.currency).toUpperCase() ? null : fields.rateSource,
+      settlement_notes: fields.notes,
+      updated_at: new Date().toISOString(),
+    }).eq("id", fields.orderId).eq("store_id", store.id);
+    if (error) throw error;
+    revalidatePath(`/dashboard/orders/${fields.orderId}`);
     return ok();
   } catch (err) {
     return toActionResult(err);

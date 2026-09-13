@@ -16,21 +16,25 @@ const entityTypeSchema = z.enum(["product", "category", "attribute_name", "attri
 export async function getEntityTranslations(
   entityType: z.infer<typeof entityTypeSchema>,
   entityId: string
-): Promise<Record<string, Record<string, { value: string; translator: "ai" | "human" }>>> {
+): Promise<Record<string, Record<string, { value: string; translator: "ai" | "human"; needsReview: boolean }>>> {
   entityId = validateId(entityId);
   const store = await getCurrentStore();
 
   const { data } = await supabaseAdmin
     .from("translations")
-    .select("locale, field_name, value, translator")
+    .select("locale, field_name, value, translator, needs_review")
     .eq("store_id", store.id)
     .eq("entity_type", entityType)
     .eq("entity_id", entityId);
 
-  const result: Record<string, Record<string, { value: string; translator: "ai" | "human" }>> = {};
+  const result: Record<string, Record<string, { value: string; translator: "ai" | "human"; needsReview: boolean }>> = {};
   for (const row of data ?? []) {
     if (!result[row.locale]) result[row.locale] = {};
-    result[row.locale][row.field_name] = { value: row.value, translator: row.translator };
+    result[row.locale][row.field_name] = {
+      value: row.value,
+      translator: row.translator,
+      needsReview: Boolean(row.needs_review),
+    };
   }
   return result;
 }
@@ -62,6 +66,7 @@ export async function saveManualTranslation(input: z.infer<typeof saveSchema>): 
         locale,
         value,
         translator: "human",
+        needs_review: false,
       },
       { onConflict: "entity_type,entity_id,field_name,locale" }
     );

@@ -1,6 +1,7 @@
 import type { Store } from "@/lib/types";
+import { KARIV_GLAMOUR_STORE_ID } from "./tenant-ids.js";
 
-export const KARIV_GLAMOUR_STORE_ID = "7efd71bc-0287-4f40-8a2f-1de330c49522";
+export { KARIV_GLAMOUR_STORE_ID };
 export const KARIV_TRANSLATION_PROTECTED_PRODUCT_IDS = new Set([
   "7375cbf5-5588-4ca9-bd16-baae4be6a0e5",
   "abb40274-aa40-44d7-93d3-6e93c552c51b",

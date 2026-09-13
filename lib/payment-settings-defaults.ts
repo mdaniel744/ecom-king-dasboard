@@ -9,6 +9,8 @@ export function defaultPaymentSettings(storeId: string): PaymentSettings {
     bank_account_number: null,
     bank_country: null,
     bank_currency: "USD",
+    bank_supported_currencies: ["USD"],
+    bank_currency_instructions: {},
     bank_iban: null,
     bank_swift_bic: null,
     bank_instructions:

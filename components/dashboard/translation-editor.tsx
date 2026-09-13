@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Pencil, RotateCcw, Sparkles } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,7 +31,10 @@ type Props = {
   fields: FieldDef[];
 };
 
-type TranslationsByLocale = Record<string, Record<string, { value: string; translator: "ai" | "human" }>>;
+type TranslationsByLocale = Record<
+  string,
+  Record<string, { value: string; translator: "ai" | "human"; needsReview: boolean }>
+>;
 
 function localeLabel(code: string): string {
   return CONTENT_LANGUAGE_OPTIONS.find((o) => o.value === code)?.label ?? code;
@@ -112,7 +115,10 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
     if (result.success) {
       setData((prev) => ({
         ...prev,
-        [locale]: { ...prev[locale], [field]: { value, translator: "human" } },
+        [locale]: {
+          ...prev[locale],
+          [field]: { value, translator: "human", needsReview: false },
+        },
       }));
       setDrafts((prev) => {
         const next = { ...prev };
@@ -213,6 +219,7 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
               const key = draftKey(activeLocale, field.name);
               const human = isHuman(activeLocale, field.name);
               const exists = hasTranslation(activeLocale, field.name);
+              const needsReview = Boolean(data[activeLocale]?.[field.name]?.needsReview);
               const InputComponent = field.multiline ? Textarea : Input;
               return (
                 <div key={field.name} className="space-y-1.5">
@@ -232,6 +239,11 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
                       <span className="text-[10px] text-muted-foreground">
                         Not translated yet — showing source text on the storefront
                       </span>
+                    )}
+                    {needsReview && (
+                      <Badge className="gap-1 border-amber-300 bg-amber-100 text-[10px] text-amber-900">
+                        <AlertTriangle className="h-2.5 w-2.5" /> English changed — review
+                      </Badge>
                     )}
                   </div>
                   <InputComponent

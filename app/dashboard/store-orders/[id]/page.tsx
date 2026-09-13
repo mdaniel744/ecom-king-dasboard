@@ -24,6 +24,8 @@ import {
 import { OrderManagementPanel } from "./order-management-panel";
 import { CustomerAddressDetails } from "@/components/dashboard/customer-address-details";
 import { humanizeKey, readableValue } from "@/lib/inquiry-display";
+import { bankTransferForCurrency } from "@/lib/payment-currency";
+import { getPaymentSettings } from "@/lib/payment-settings";
 import type { CheckoutOrder } from "@/lib/types";
 
 export default async function StoreOrderDetailPage({ params }: PageProps<"/dashboard/store-orders/[id]">) {
@@ -45,11 +47,18 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
 
   if (!data) notFound();
   const order = data as CheckoutOrder;
+  const paymentSettings = await getPaymentSettings(store.id);
+  const bankCurrency = bankTransferForCurrency(paymentSettings, order.currency);
   const customerDetailRows = Object.entries(order.customer_details ?? {}).filter(([, value]) =>
     readableValue(value)
   );
-  const formRows = Object.entries(order.form_data ?? {}).filter(([, value]) =>
-    readableValue(value)
+  const pricingAuditValue = order.form_data?.pricing_audit;
+  const pricingAudit =
+    pricingAuditValue && typeof pricingAuditValue === "object" && !Array.isArray(pricingAuditValue)
+      ? pricingAuditValue as Record<string, unknown>
+      : null;
+  const formRows = Object.entries(order.form_data ?? {}).filter(([key, value]) =>
+    key !== "pricing_audit" && readableValue(value)
   );
 
   return (
@@ -134,6 +143,14 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
                       {item.sku ? ` · SKU ${item.sku}` : ""}
                       {item.brand ? ` · ${item.brand}` : ""}
                     </p>
+                    {item.source_currency && item.source_price != null && item.source_currency !== order.currency && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Source {formatOrderMoney(item.source_price, item.source_currency)}
+                        {item.exchange_rate ? ` · rate ${item.exchange_rate.toFixed(6)}` : ""}
+                        {item.rate_source ? ` · ${item.rate_source}` : ""}
+                        {item.rate_date ? ` · ${item.rate_date}` : ""}
+                      </p>
+                    )}
                     {Object.keys(item.attributes ?? {}).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {Object.entries(item.attributes ?? {}).map(([key, value]) => (
@@ -191,6 +208,20 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
                   .join(" · ")}
               </p>
             )}
+            {pricingAudit && (
+              <div className="mt-4 rounded-md border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Saved conversion audit</p>
+                <p className="mt-1">
+                  {readableValue(pricingAudit.rate_sources) || "No conversion required"}
+                  {readableValue(pricingAudit.rate_dates)
+                    ? ` · rate date ${readableValue(pricingAudit.rate_dates)}`
+                    : ""}
+                  {readableValue(pricingAudit.calculated_at)
+                    ? ` · calculated ${readableValue(pricingAudit.calculated_at)}`
+                    : ""}
+                </p>
+              </div>
+            )}
           </section>
 
           <section className="rounded-lg border border-border bg-card p-5">
@@ -204,6 +235,12 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
               <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Payment reference</p><p className="mt-1">{order.payment_reference || "—"}</p></div>
               <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Invoice</p><p className="mt-1">{order.invoice_number || "Not numbered"} · {CHECKOUT_INVOICE_STATUS_LABEL[order.invoice_status]}</p></div>
             </div>
+            {paymentSettings.bank_transfer_enabled && !bankCurrency.supported && (
+              <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                This beneficiary account has not been verified for {order.currency}. Configure and confirm
+                that currency under Payments before sending payment instructions.
+              </div>
+            )}
             {order.customer_note && (
               <div className="mt-4 border-t border-border pt-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer note</p>

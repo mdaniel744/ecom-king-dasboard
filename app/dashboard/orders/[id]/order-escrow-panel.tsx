@@ -12,6 +12,7 @@ import {
   updateOrderTracking,
   sendOrderMessageToBuyer,
   sendOrderMessageToDealer,
+  saveDealerSettlement,
 } from "@/app/dashboard/orders/actions";
 import { NEXT_ACTION, CANCELLABLE_STATUSES, STATUS_LABEL } from "@/lib/order-display";
 import type { Order, OrderMessage } from "@/lib/types";
@@ -27,6 +28,12 @@ export function OrderEscrowPanel({
 }) {
   const [isPending, startTransition] = useTransition();
   const [trackingNumber, setTrackingNumber] = useState(order.tracking_number ?? "");
+  const [settlementCurrency, setSettlementCurrency] = useState(order.settlement_currency ?? order.currency);
+  const [settlementAmount, setSettlementAmount] = useState(String(order.settlement_amount ?? order.total_amount));
+  const [settlementRate, setSettlementRate] = useState(String(order.settlement_exchange_rate ?? ""));
+  const [settlementDate, setSettlementDate] = useState(order.settlement_rate_date ?? "");
+  const [settlementSource, setSettlementSource] = useState(order.settlement_rate_source ?? "");
+  const [settlementNotes, setSettlementNotes] = useState(order.settlement_notes ?? "");
 
   function handleAdvance(nextStatus: string) {
     startTransition(async () => {
@@ -59,6 +66,21 @@ export function OrderEscrowPanel({
       } else {
         toast.error(result.error);
       }
+    });
+  }
+
+  function handleSettlementSave() {
+    startTransition(async () => {
+      const result = await saveDealerSettlement(order.id, {
+        currency: settlementCurrency,
+        amount: Number(settlementAmount),
+        exchangeRate: settlementRate ? Number(settlementRate) : null,
+        rateDate: settlementDate,
+        rateSource: settlementSource,
+        notes: settlementNotes,
+      });
+      if (result.success) toast.success("Dealer settlement saved");
+      else toast.error(result.error);
     });
   }
 
@@ -117,6 +139,29 @@ export function OrderEscrowPanel({
             </div>
           </div>
         </div>
+
+        {order.dealer_user_id && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dealer Settlement</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Record the actual payout currency. A conversion rate, date, and source are required when it differs from {order.currency}.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Input value={settlementCurrency} onChange={(event) => setSettlementCurrency(event.target.value.toUpperCase())} maxLength={3} placeholder="EUR" />
+              <Input value={settlementAmount} onChange={(event) => setSettlementAmount(event.target.value)} type="number" min="0" step="0.01" placeholder="Amount" />
+              <Input value={settlementRate} onChange={(event) => setSettlementRate(event.target.value)} type="number" min="0" step="any" placeholder="Exchange rate" />
+              <Input value={settlementDate} onChange={(event) => setSettlementDate(event.target.value)} type="date" />
+              <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={settlementSource} onChange={(event) => setSettlementSource(event.target.value)}>
+                <option value="">Rate source</option>
+                <option value="CNB">CNB</option>
+                <option value="ECB">ECB</option>
+                <option value="provider">Payment provider</option>
+              </select>
+              <Input value={settlementNotes} onChange={(event) => setSettlementNotes(event.target.value)} placeholder="Settlement note" />
+            </div>
+            <Button type="button" variant="outline" className="mt-2 w-full" disabled={isPending} onClick={handleSettlementSave}>Save settlement</Button>
+          </div>
+        )}
 
         {address && (
           <div className="rounded-lg border border-border bg-card p-4">

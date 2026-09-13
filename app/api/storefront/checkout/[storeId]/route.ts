@@ -5,7 +5,7 @@ import {
   createMarketPriceConverter,
   CurrencyConversionError,
 } from "@/lib/market-pricing";
-import { getStoreMarkets, resolveStorefrontMarket } from "@/lib/merchant-locales";
+import { getStoreMarkets, resolveRequestedStorefrontMarket } from "@/lib/merchant-locales";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   asCustomerAddress,
@@ -90,6 +90,7 @@ type CheckoutProduct = Pick<
   | "name"
   | "slug"
   | "price"
+  | "sale_price"
   | "currency"
   | "images"
   | "condition"
@@ -120,9 +121,9 @@ export function OPTIONS() {
  * Creates a real checkout_orders row from a storefront's cart. Mirrors
  * /api/storefront/prices for product-price trust: the client never sends
  * product prices -- every product amount and VAT value is recomputed from
- * live product/market data. A storefront may send its calculated delivery
- * charge until server-managed delivery rules are added; that value is
- * stored separately and remains visible to staff. The two DB triggers wired to checkout_orders
+ * live product/market data. Delivery charges must also come from a trusted
+ * server integration; this public endpoint refuses browser-calculated
+ * delivery amounts. The two DB triggers wired to checkout_orders
  * (auto-invoice email, staff submission notification) fire automatically
  * on insert -- this route only needs to create a correct, trustworthy row.
  */
@@ -187,9 +188,11 @@ export async function POST(
       { status: 400 }
     );
   }
-  const market =
-    parsed.data.market ||
-    (parsed.data.locale ? resolveStorefrontMarket(store, parsed.data.locale) : configuredMarkets[0]);
+  const market = resolveRequestedStorefrontMarket(
+    store,
+    parsed.data.locale,
+    parsed.data.market
+  );
   if (!market) {
     console.error(
       `Storefront checkout rejected [${storeId}]: no market resolvable from locale "${parsed.data.locale}"`
@@ -197,8 +200,23 @@ export async function POST(
     return json(
       {
         error:
-          `No delivery market is linked to storefront locale "${parsed.data.locale}". ` +
-          "Link it under Delivery Markets or send an explicit market code.",
+          `The storefront locale/market selection is not enabled for this store. ` +
+          "For Kariv, Czech uses CZ/CZK while English and German use DE/EUR.",
+      },
+      { status: 422 }
+    );
+  }
+
+  // This public route cannot trust a delivery charge calculated in a browser.
+  // Until server-managed delivery rules are connected, accept only free/zero
+  // delivery here. Kariv's deployed server checkout may continue writing its
+  // own trusted final order snapshot directly.
+  if ((parsed.data.shippingAmount ?? 0) !== 0) {
+    return json(
+      {
+        error:
+          "A browser-supplied delivery charge cannot be used as an authoritative order amount. " +
+          "Calculate delivery on the storefront server or configure server-side delivery rules.",
       },
       { status: 422 }
     );
@@ -207,7 +225,7 @@ export async function POST(
   const productIds = Array.from(new Set(parsed.data.lineItems.map((item) => item.productId)));
   const { data: productData, error: productError } = await supabaseAdmin
     .from("products")
-    .select("id, name, slug, price, currency, images, condition, brand, sku, attributes, status, store_id")
+    .select("id, name, slug, price, sale_price, currency, images, condition, brand, sku, attributes, status, store_id")
     .eq("store_id", store.id)
     .in("id", productIds);
 
@@ -245,7 +263,8 @@ export async function POST(
 
     const lineItems: OrderLineItem[] = parsed.data.lineItems.map((item) => {
       const product = productsById.get(item.productId)!;
-      const converted = converter.convert(product.price!, product.currency);
+      const sourcePrice = product.sale_price ?? product.price!;
+      const converted = converter.convert(sourcePrice, product.currency);
       const lineSubtotal = Math.round(converted.netAmount * item.quantity * 100) / 100;
       const lineTaxAmount = Math.round(lineSubtotal * (converter.vatRate / 100) * 100) / 100;
       return {
@@ -267,6 +286,11 @@ export async function POST(
         line_total: Math.round((lineSubtotal + lineTaxAmount) * 100) / 100,
         condition: product.condition,
         brand: product.brand ?? undefined,
+        source_price: sourcePrice,
+        source_currency: product.currency,
+        exchange_rate: converted.exchangeRate,
+        rate_date: converted.rateDate,
+        rate_source: converted.rateSource,
       };
     });
 
@@ -308,7 +332,22 @@ export async function POST(
         market,
         locale: parsed.data.locale || null,
         delivery_method: parsed.data.deliveryMethod || null,
-        form_data: asFormFieldData(parsed.data.formFields),
+        form_data: {
+          ...asFormFieldData(parsed.data.formFields),
+          pricing_audit: {
+            calculated_by: "dashboard_server",
+            calculated_at: new Date().toISOString(),
+            market,
+            locale: parsed.data.locale || store.google_content_language,
+            order_currency: converter.currency,
+            rate_sources: Array.from(
+              new Set(lineItems.map((item) => item.rate_source).filter(Boolean))
+            ),
+            rate_dates: Array.from(
+              new Set(lineItems.map((item) => item.rate_date).filter(Boolean))
+            ),
+          },
+        },
         payment_method: "bank_transfer",
         customer_note: parsed.data.customerNote || null,
       })

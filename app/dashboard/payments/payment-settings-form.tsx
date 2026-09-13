@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { defaultPaymentSettings } from "@/lib/payment-settings-defaults";
+import { KARIV_GLAMOUR_STORE_ID } from "@/lib/tenant-ids";
 import type { CardPaymentProvider, PaymentSettings } from "@/lib/types";
 
 function text(value: string | null) {
@@ -49,6 +50,8 @@ export function PaymentSettingsForm({ initialSettings }: { initialSettings: Paym
         bankAccountNumber: text(settings.bank_account_number),
         bankCountry: text(settings.bank_country),
         bankCurrency: settings.bank_currency,
+        bankSupportedCurrencies: settings.bank_supported_currencies,
+        bankCurrencyInstructions: settings.bank_currency_instructions,
         bankIban: text(settings.bank_iban),
         bankSwiftBic: text(settings.bank_swift_bic),
         bankInstructions: text(settings.bank_instructions),
@@ -73,13 +76,26 @@ export function PaymentSettingsForm({ initialSettings }: { initialSettings: Paym
     <div id="payment-methods" className="space-y-6 scroll-mt-6">
       <ActionErrorBanner message={error} />
 
+      {settings.store_id === KARIV_GLAMOUR_STORE_ID &&
+        !settings.bank_supported_currencies.includes("CZK") && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            CZK bank transfers are not verified yet. Confirm the receiving account can accept CZK,
+            then add <strong>CZK</strong> under verified accepted currencies and provide any CZK-specific instructions.
+          </div>
+        )}
+
       <div className="grid gap-4 lg:grid-cols-3">
         <MethodCard
           title="Bank transfer"
           description="Show account details for manual transfers."
           icon={Building2}
           enabled={settings.bank_transfer_enabled}
-          configured={Boolean(settings.bank_name && settings.bank_account_name && settings.bank_account_number)}
+          configured={Boolean(
+            settings.bank_name &&
+            settings.bank_account_name &&
+            settings.bank_account_number &&
+            settings.bank_supported_currencies.length > 0
+          )}
           onChange={(enabled) => update("bank_transfer_enabled", enabled)}
         />
         <MethodCard
@@ -187,6 +203,42 @@ export function PaymentSettingsForm({ initialSettings }: { initialSettings: Paym
               maxLength={50}
             />
           </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="payment-bank-supported-currencies">Verified accepted currencies</Label>
+            <Input
+              id="payment-bank-supported-currencies"
+              value={settings.bank_supported_currencies.join(", ")}
+              onChange={(event) => update(
+                "bank_supported_currencies",
+                Array.from(new Set(
+                  event.target.value
+                    .split(",")
+                    .map((currency) => currency.trim().toUpperCase())
+                    .filter(Boolean)
+                ))
+              )}
+              placeholder="EUR, CZK"
+            />
+            <p className="text-xs text-muted-foreground">
+              Add CZK only after the beneficiary account or payment provider confirms it can receive CZK.
+            </p>
+          </div>
+          {settings.bank_supported_currencies.map((currency) => (
+            <div key={currency} className="space-y-2 sm:col-span-2">
+              <Label htmlFor={`payment-bank-instructions-${currency}`}>{currency} payment instructions</Label>
+              <Textarea
+                id={`payment-bank-instructions-${currency}`}
+                value={settings.bank_currency_instructions[currency] ?? ""}
+                onChange={(event) => update("bank_currency_instructions", {
+                  ...settings.bank_currency_instructions,
+                  [currency]: event.target.value,
+                })}
+                rows={3}
+                maxLength={3000}
+                placeholder={`Optional instructions specific to ${currency} transfers`}
+              />
+            </div>
+          ))}
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="payment-bank-instructions">Customer instructions</Label>
             <Textarea

@@ -12,7 +12,7 @@ import {
 const kariv = {
   id: KARIV_GLAMOUR_STORE_ID,
   google_content_language: "en",
-  enabled_locales: ["de"],
+  enabled_locales: ["de", "cs"],
 };
 const otherStore = {
   id: "00000000-0000-4000-8000-000000000999",
@@ -23,7 +23,7 @@ const otherStore = {
 test("Kariv policy is isolated to the verified tenant id", () => {
   assert.equal(usesKarivProductLanguagePolicy(kariv), true);
   assert.equal(usesKarivProductLanguagePolicy(otherStore), false);
-  assert.deepEqual(configuredProductContentLocales(kariv), ["en", "de"]);
+  assert.deepEqual(configuredProductContentLocales(kariv), ["en", "de", "cs"]);
   assert.deepEqual(configuredProductContentLocales(otherStore), []);
 });
 

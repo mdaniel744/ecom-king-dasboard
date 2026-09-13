@@ -2,10 +2,14 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { defaultCurrencyForMarket } from "@/lib/merchant-locales";
+import { KARIV_GLAMOUR_STORE_ID } from "@/lib/tenant-ids";
+import { parseCnbReferenceRates } from "@/lib/cnb-rates";
 import type { Store } from "@/lib/types";
 
 const ECB_REFERENCE_RATES_URL =
   "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A?lastNObservations=1&format=csvdata";
+const CNB_REFERENCE_RATES_URL =
+  "https://www.cnb.cz/en/financial-markets/foreign-exchange-market/central-bank-exchange-rate-fixing/central-bank-exchange-rate-fixing/daily.txt";
 const RATE_CACHE_SECONDS = 60 * 60;
 const MAX_RATE_AGE_MS = 10 * 24 * 60 * 60 * 1000;
 // How old our own cached rates can get before a request opportunistically
@@ -16,7 +20,7 @@ const REFRESH_STALE_AFTER_MS = 50 * 60 * 1000;
 
 export class CurrencyConversionError extends Error {}
 
-export type MarketPricingStore = Pick<Store, "market_currencies" | "vat_rates">;
+export type MarketPricingStore = Pick<Store, "id" | "market_currencies" | "vat_rates">;
 
 export type MarketPrice = {
   amount: number;
@@ -25,7 +29,7 @@ export type MarketPrice = {
   vatRate: number;
   exchangeRate: number;
   rateDate: string | null;
-  rateSource: "ECB" | null;
+  rateSource: "ECB" | "CNB" | null;
 };
 
 export type MarketPriceConverter = {
@@ -38,6 +42,7 @@ export type MarketPriceConverter = {
 type EcbReferenceRates = {
   rates: Record<string, number>;
   observedAt: Record<string, string>;
+  source: "ECB" | "CNB";
 };
 
 function parseCsvLine(line: string): string[] {
@@ -113,7 +118,39 @@ async function getEcbReferenceRates(): Promise<EcbReferenceRates> {
   }
   observedAt.EUR = latestDate;
 
-  return { rates, observedAt };
+  return { rates, observedAt, source: "ECB" };
+}
+
+/**
+ * CNB publishes CZK for a stated amount of each foreign currency. Normalize
+ * that to currency units per CZK so the existing cross-rate formula remains
+ * the single conversion implementation used by the dashboard.
+ */
+async function getCnbReferenceRates(): Promise<EcbReferenceRates> {
+  let response: Response;
+  try {
+    response = await fetch(CNB_REFERENCE_RATES_URL, {
+      headers: { Accept: "text/plain" },
+      next: { revalidate: RATE_CACHE_SECONDS },
+    });
+  } catch {
+    throw new CurrencyConversionError(
+      "The Czech National Bank exchange-rate service is temporarily unavailable. Try again shortly."
+    );
+  }
+  if (!response.ok) {
+    throw new CurrencyConversionError(
+      `The Czech National Bank exchange-rate service returned ${response.status}. Try again later.`
+    );
+  }
+
+  try {
+    return parseCnbReferenceRates(await response.text());
+  } catch (error) {
+    throw new CurrencyConversionError(
+      error instanceof Error ? error.message : "The Czech National Bank response had an unexpected format."
+    );
+  }
 }
 
 /**
@@ -130,6 +167,7 @@ async function refreshExchangeRateCache(): Promise<EcbReferenceRates> {
     currency,
     rate,
     observed_at: snapshot.observedAt[currency] ?? snapshot.observedAt.EUR,
+    fetched_at: new Date().toISOString(),
   }));
   const { error } = await supabaseAdmin.from("exchange_rate_cache").upsert(rows, { onConflict: "currency" });
   if (error) throw new CurrencyConversionError(`Failed to update the exchange rate cache: ${error.message}`);
@@ -195,7 +233,7 @@ async function getCachedEcbReferenceRates(): Promise<EcbReferenceRates> {
     triggerBackgroundRefresh();
   }
 
-  return { rates, observedAt };
+  return { rates, observedAt, source: "ECB" };
 }
 
 function roundForCurrency(amount: number, currency: string): number {
@@ -234,7 +272,7 @@ function referenceRate(
   const date = snapshot.observedAt[currency];
   if (!rate || !date) {
     throw new CurrencyConversionError(
-      `Automatic conversion for ${currency} is not available from the ECB reference-rate feed.`
+      `Automatic conversion for ${currency} is not available from the ${snapshot.source} reference-rate feed.`
     );
   }
 
@@ -263,7 +301,14 @@ export async function createMarketPriceConverter(
   const needsConversion = sourceCurrencies.some(
     (currency) => currency.trim().toUpperCase() !== target
   );
-  const snapshot = needsConversion ? await getCachedEcbReferenceRates() : null;
+  const useCnb =
+    store.id === KARIV_GLAMOUR_STORE_ID &&
+    (target === "CZK" || sourceCurrencies.some((currency) => currency.trim().toUpperCase() === "CZK"));
+  const snapshot = needsConversion
+    ? useCnb
+      ? await getCnbReferenceRates()
+      : await getCachedEcbReferenceRates()
+    : null;
 
   return {
     market: normalizedMarket,
@@ -278,7 +323,7 @@ export async function createMarketPriceConverter(
       let convertedNet = price;
       let exchangeRate = 1;
       let rateDate: string | null = null;
-      let rateSource: "ECB" | null = null;
+      let rateSource: "ECB" | "CNB" | null = null;
 
       if (source !== target) {
         if (!snapshot) {
@@ -291,7 +336,7 @@ export async function createMarketPriceConverter(
         exchangeRate = targetReference.rate / sourceReference.rate;
         convertedNet = price * exchangeRate;
         rateDate = [sourceReference.date, targetReference.date].sort()[0];
-        rateSource = "ECB";
+        rateSource = snapshot.source;
       }
 
       const netAmount = roundForCurrency(convertedNet, target);
