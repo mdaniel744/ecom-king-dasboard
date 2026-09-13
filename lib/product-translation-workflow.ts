@@ -100,11 +100,18 @@ export async function saveIncomingProductTranslations(
       value: translation.value,
       // This is the operator/import file's original copy, not generated text.
       translator: "human",
-      needs_review: false,
     })),
     { onConflict: "entity_type,entity_id,field_name,locale" }
   );
   if (error) throw new Error(`Product translations could not be saved: ${error.message}`);
+  // Best-effort because older deployments may not have this optional column.
+  await supabaseAdmin
+    .from("translations")
+    .update({ needs_review: false })
+    .eq("store_id", store.id)
+    .eq("entity_type", "product")
+    .eq("entity_id", productId)
+    .in("locale", [...new Set(translations.map((translation) => translation.locale))]);
 }
 
 export async function syncProductTranslations(

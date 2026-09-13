@@ -20,12 +20,24 @@ export async function getEntityTranslations(
   entityId = validateId(entityId);
   const store = await getCurrentStore();
 
-  const { data } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from("translations")
     .select("locale, field_name, value, translator, needs_review")
     .eq("store_id", store.id)
     .eq("entity_type", entityType)
     .eq("entity_id", entityId);
+
+  if (error?.message.includes("needs_review")) {
+    const fallback = await supabaseAdmin
+      .from("translations")
+      .select("locale, field_name, value, translator")
+      .eq("store_id", store.id)
+      .eq("entity_type", entityType)
+      .eq("entity_id", entityId);
+    data = (fallback.data ?? []).map((row) => ({ ...row, needs_review: false }));
+    error = fallback.error;
+  }
+  if (error) throw error;
 
   const result: Record<string, Record<string, { value: string; translator: "ai" | "human"; needsReview: boolean }>> = {};
   for (const row of data ?? []) {
@@ -66,12 +78,21 @@ export async function saveManualTranslation(input: z.infer<typeof saveSchema>): 
         locale,
         value,
         translator: "human",
-        needs_review: false,
       },
       { onConflict: "entity_type,entity_id,field_name,locale" }
     );
 
     if (error) throw error;
+    // Saving the correction also acknowledges an existing review flag. This
+    // is best-effort for deployments that have not installed the column yet.
+    await supabaseAdmin
+      .from("translations")
+      .update({ needs_review: false })
+      .eq("store_id", store.id)
+      .eq("entity_type", entityType)
+      .eq("entity_id", entityId)
+      .eq("field_name", fieldName)
+      .eq("locale", locale);
     return ok();
   } catch (err) {
     return toActionResult(err);

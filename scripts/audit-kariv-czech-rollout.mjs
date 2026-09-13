@@ -99,13 +99,17 @@ function hasTranslatableEnglishTitle(value) {
   return /\b(white|yellow|rose|gold|steel|new|used|unworn|excellent|condition|full set|box|papers|bracelet|dial|year)\b/.test(text);
 }
 
+function hasVisibleContent(value) {
+  return plainText(value).replaceAll("\u00a0", " ").trim().length > 0;
+}
+
 function translationState(source, target, locale, fieldName) {
   if (!target?.value?.trim()) return "missing";
   if (target.translator === "human") return "human";
   const same = comparable(source) === comparable(target.value);
   const detected = detectLanguage(target.value);
-  if (detected === SOURCE_LOCALE || (locale === "cs" && detected === "de")) return "invalid";
   if (same && (fieldName !== "name" || hasTranslatableEnglishTitle(source))) return "invalid";
+  if (fieldName !== "name" && (detected === SOURCE_LOCALE || (locale === "cs" && detected === "de"))) return "invalid";
   return "valid";
 }
 
@@ -194,7 +198,7 @@ async function main() {
     for (const product of products) {
       for (const fieldName of FIELDS) {
         const source = product[fieldName];
-        if (!source?.trim()) continue;
+        if (!source?.trim() || !hasVisibleContent(source)) continue;
         const state = translationState(
           source,
           byKey.get(`${product.id}:${locale}:${fieldName}`),

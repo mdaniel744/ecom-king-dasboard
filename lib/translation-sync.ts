@@ -116,11 +116,16 @@ export async function syncTranslations({
         .eq("translator", "human")
         .in("field_name", changed);
       if (error) {
-        summary.failures.push({
-          locale: "human",
-          fieldName: changed.join(","),
-          message: `Human translation review flags could not be updated: ${error.message}`,
-        });
+        // Older deployments may not have installed the optional review flag
+        // column yet. Translation itself must continue; only the visual review
+        // marker is unavailable until setup-translation-review.sql is run.
+        if (!error.message.includes("needs_review")) {
+          summary.failures.push({
+            locale: "human",
+            fieldName: changed.join(","),
+            message: `Human translation review flags could not be updated: ${error.message}`,
+          });
+        }
       }
     }
   }
@@ -165,7 +170,6 @@ export async function syncTranslations({
               locale,
               value: translated,
               translator: "ai",
-              needs_review: false,
             },
             { onConflict: "entity_type,entity_id,field_name,locale" }
           );
@@ -190,7 +194,6 @@ export async function syncTranslations({
                   locale,
                   value: slugify(translated),
                   translator: "ai",
-                  needs_review: false,
                 },
                 { onConflict: "entity_type,entity_id,field_name,locale" }
               );

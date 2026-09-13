@@ -77,12 +77,21 @@ function detectLanguage(value) {
 function hasTranslatableTitle(value) {
   return /\b(white|yellow|rose|gold|steel|new|used|unworn|excellent|condition|full set|box|papers|bracelet|dial|year)\b/i.test(plain(value));
 }
+
+function hasVisibleContent(value) {
+  return plain(value).replaceAll("\u00a0", " ").trim().length > 0;
+}
 function translationState(source, target, locale, fieldName) {
   if (!target?.value?.trim()) return "missing";
   if (target.translator === "human") return "human";
   const detected = detectLanguage(target.value);
-  if (detected === "en" || (locale === "cs" && detected === "de")) return "invalid_language";
-  if (comparable(source) === comparable(target.value) && (fieldName !== "name" || hasTranslatableTitle(source))) return "duplicated_source";
+  const same = comparable(source) === comparable(target.value);
+  if (same && (fieldName !== "name" || hasTranslatableTitle(source))) return "duplicated_source";
+  // Product titles intentionally retain official English collection/model
+  // names. Once their surrounding descriptors changed, a word-frequency
+  // detector is not reliable enough to reject the mixed title. Descriptions
+  // should read as the target language throughout and remain strictly checked.
+  if (fieldName !== "name" && (detected === "en" || (locale === "cs" && detected === "de"))) return "invalid_language";
   return "valid";
 }
 function jobKey(job) { return `${job.productId}:${job.locale}:${job.fieldName}`; }
@@ -128,7 +137,7 @@ async function loadCatalog(client) {
 
 function sourceFor(product, fieldName, byKey) {
   const primary = product[fieldName]?.trim();
-  if (!primary) return { value: null, review: false, source: "empty" };
+  if (!primary || !hasVisibleContent(primary)) return { value: null, review: false, source: "empty" };
   const detected = detectLanguage(primary);
   if (detected !== "de" && detected !== "cs") return { value: primary, review: false, source: "primary" };
   // Accented French model names such as “Cintrée” and “Trésor” are factual
@@ -190,22 +199,46 @@ async function translate(job, apiKey) {
     "You are a professional translator for a luxury-watch ecommerce catalogue.",
     `Translate this ${job.fieldName.replaceAll("_", " ")} from English to ${job.locale === "de" ? "German" : "Czech"}.`,
     "Do not add, remove, infer, or change product facts.",
-    "Preserve brand and model names, reference numbers, specifications, measurements, years, condition claims, punctuation, and all numbers exactly.",
+    "Preserve exact brand names, official collection/model names, reference numbers, specifications, measurements, years, punctuation, and all numbers.",
+    "Do not preserve an entire product title as a model name. You MUST translate every generic commercial descriptor, including colors, metals/materials, condition, box/papers or full-set wording, availability, dial/bezel/bracelet wording, and shipping wording.",
+    "Official model-name preservation does not include generic phrases such as Frosted Gold, Flying Tourbillon, Perpetual Calendar, Moon, Design, Quartz, Yellow Gold, Bracelet, Box, Extra Links Included, Large, Blue Dial, or Complete Set; translate those phrases.",
+    "If the text mixes official English model names with ordinary English descriptors, keep only the official names and translate all remaining descriptive English.",
+    "A product title that contains generic English descriptors must not be returned unchanged.",
     job.fieldName === "description" ? "Preserve every HTML tag, attribute, and the exact tag structure; translate only visible text." : "Preserve the plain-text structure.",
     "Return only the translation, without labels, quotes, commentary, or markdown fences.",
   ].join(" ");
   let lastError;
+  let previousResult = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60_000);
     try {
       const response = await fetch(API_URL, {
         method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "deepseek-chat", messages: [{ role: "system", content: instructions }, { role: "user", content: job.sourceValue }], temperature: 0.1 }), signal: controller.signal,
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [
+            { role: "system", content: instructions },
+            { role: "user", content: job.sourceValue },
+            ...(previousResult ? [
+              { role: "assistant", content: previousResult },
+              { role: "user", content: "Your previous answer left translatable English wording unchanged. Keep only brand, official collection/model, and reference tokens in their official form. Translate every other visible English word or phrase, including horology terms when they describe a feature. The corrected answer must differ from the source. Return only the corrected translation." },
+            ] : []),
+          ],
+          temperature: 0.1,
+        }), signal: controller.signal,
       });
       if (!response.ok) throw new Error(`DeepSeek returned HTTP ${response.status}`);
       const result = (await response.json()).choices?.[0]?.message?.content?.trim();
       if (!result) throw new Error("DeepSeek returned empty content");
+      const unchanged = comparable(result) === comparable(job.sourceValue);
+      const wrongDescriptionLanguage =
+        job.fieldName !== "name" &&
+        (detectLanguage(result) === "en" || (job.locale === "cs" && detectLanguage(result) === "de"));
+      if ((unchanged && (job.fieldName !== "name" || hasTranslatableTitle(job.sourceValue))) || wrongDescriptionLanguage) {
+        previousResult = result;
+        throw new Error("DeepSeek left translatable source-language wording unchanged");
+      }
       return result;
     } catch (error) {
       lastError = error;
@@ -268,6 +301,14 @@ async function main() {
     plannedByLocaleAndCause: summarizeJobs(plan.jobs), existingStates: plan.states,
     humanOrValidFieldsSkipped: Object.entries(plan.states).filter(([key]) => /:(human|valid)$/.test(key)).reduce((sum, [, count]) => sum + count, 0),
     reviewRequired: plan.review.length, review: plan.review,
+    plannedSample: plan.jobs.slice(0, 40).map((job) => ({
+      productId: job.productId,
+      productName: job.productName,
+      locale: job.locale,
+      fieldName: job.fieldName,
+      cause: job.cause,
+      targetPreview: String(catalog.byKey.get(`${job.productId}:${job.locale}:${job.fieldName}`)?.value ?? "").slice(0, 300),
+    })),
   };
   const planPath = resolve(REPORTS, "kariv-translation-repair-plan.json");
   writeJson(planPath, report);
@@ -282,6 +323,8 @@ async function main() {
   const limitText = option("limit") ?? "25";
   const limit = limitText === "all" ? Number.POSITIVE_INFINITY : Number.parseInt(limitText, 10);
   if (!(limit > 0)) throw new Error("--limit must be a positive number or all.");
+  const batchSize = Number.parseInt(option("batch-size") ?? "10", 10);
+  if (!(batchSize > 0 && batchSize <= 25)) throw new Error("--batch-size must be between 1 and 25.");
   const checkpointPath = resolve(REPORTS, "kariv-translation-repair-checkpoint.json");
   const checkpoint = flag("resume") && existsSync(checkpointPath) ? JSON.parse(readFileSync(checkpointPath, "utf8")) : { tenantId: STORE_ID, startedAt: new Date().toISOString(), completed: [], failures: [] };
   if (checkpoint.tenantId !== STORE_ID) throw new Error("The checkpoint belongs to another tenant.");
@@ -293,16 +336,28 @@ async function main() {
   }
   writeJson(checkpointPath, checkpoint);
 
-  const outcomes = await mapBounded(jobs, async (job) => {
-    try { return { ok: true, value: await applyJob(client, job, env.DEEPSEEK_API_KEY) }; }
-    catch (error) { return { ok: false, value: { key: jobKey(job), productId: job.productId, locale: job.locale, fieldName: job.fieldName, message: error instanceof Error ? error.message : String(error), failedAt: new Date().toISOString() } }; }
-  });
-  for (const outcome of outcomes) {
-    checkpoint.failures = checkpoint.failures.filter((item) => item.key !== outcome.value.key);
-    if (outcome.ok) checkpoint.completed.push(outcome.value); else checkpoint.failures.push(outcome.value);
+  let succeededThisRun = 0;
+  let failuresThisRun = 0;
+  for (let index = 0; index < jobs.length; index += batchSize) {
+    const batch = jobs.slice(index, index + batchSize);
+    const outcomes = await mapBounded(batch, async (job) => {
+      try { return { ok: true, value: await applyJob(client, job, env.DEEPSEEK_API_KEY) }; }
+      catch (error) { return { ok: false, value: { key: jobKey(job), productId: job.productId, locale: job.locale, fieldName: job.fieldName, message: error instanceof Error ? error.message : String(error), failedAt: new Date().toISOString() } }; }
+    });
+    for (const outcome of outcomes) {
+      checkpoint.failures = checkpoint.failures.filter((item) => item.key !== outcome.value.key);
+      if (outcome.ok) {
+        checkpoint.completed.push(outcome.value);
+        succeededThisRun++;
+      } else {
+        checkpoint.failures.push(outcome.value);
+        failuresThisRun++;
+      }
+    }
     writeJson(checkpointPath, checkpoint);
+    console.log(`Saved ${Math.min(index + batch.length, jobs.length)}/${jobs.length} fields; failures this run: ${failuresThisRun}`);
   }
-  console.log(JSON.stringify({ mode: "apply", attemptedFields: jobs.length, succeededThisRun: outcomes.filter((item) => item.ok).length, failuresThisRun: outcomes.filter((item) => !item.ok).length, totalCompleted: checkpoint.completed.length, outstandingFailures: checkpoint.failures.length, backupPath: checkpoint.backupPath, checkpointPath, planPath }, null, 2));
+  console.log(JSON.stringify({ mode: "apply", attemptedFields: jobs.length, succeededThisRun, failuresThisRun, totalCompleted: checkpoint.completed.length, outstandingFailures: checkpoint.failures.length, backupPath: checkpoint.backupPath, checkpointPath, planPath }, null, 2));
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
