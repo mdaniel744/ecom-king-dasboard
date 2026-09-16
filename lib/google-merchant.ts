@@ -146,44 +146,79 @@ export async function getTranslationsByLocale(
   store: Store,
   product: Product
 ): Promise<Map<string, TranslatedFields>> {
-  // google_title/google_description, when set, are what actually gets sent
-  // to Google — a store can write different copy for Google's algorithm
-  // than what a human visitor sees. Falls back to name/description when
-  // unset, which is every product on every store before this field existed.
-  const titleFieldName = product.google_title ? "google_title" : "name";
-  const descriptionFieldName = product.google_description ? "google_description" : "description";
+  const batch = await getTranslationsByLocaleBatch(store, [product]);
+  return batch.get(product.id)!;
+}
 
-  const sourceFields: TranslatedFields = {
-    name: product.google_title || product.name,
-    // description is rich-text HTML (see product-form.tsx's RichTextEditor)
-    // — Google's spec wants plain text, so it's always stripped here
-    // regardless of source. stripHtml is a no-op on already-plain text
-    // (e.g. google_description overrides), so this is safe either way.
-    description: stripHtml(product.google_description || product.description || product.name),
-    short_description: product.short_description,
-    slug: product.slug,
-  };
+/**
+ * Same result as calling getTranslationsByLocale once per product, but with
+ * a single translations query for the whole batch instead of one query per
+ * product. The XML feed route (app/api/feeds/.../google.xml) was calling the
+ * per-product version inside a loop over every active product -- fine for a
+ * small catalog, but for a store the size of Kariv's (500+ products) that
+ * meant 500+ sequential/parallel-but-still-individual queries fired at once,
+ * taking well over two minutes to respond and risking Google's scheduled
+ * fetch timing out on the request entirely. Confirmed the other stores never
+ * hit this because their catalogs are an order of magnitude smaller.
+ */
+export async function getTranslationsByLocaleBatch(
+  store: Store,
+  products: Product[]
+): Promise<Map<string, Map<string, TranslatedFields>>> {
+  const result = new Map<string, Map<string, TranslatedFields>>();
+  if (products.length === 0) return result;
 
-  const map = new Map<string, TranslatedFields>();
-  map.set(store.google_content_language, sourceFields);
+  const sourceFieldsById = new Map<string, TranslatedFields>();
+  const titleFieldNameById = new Map<string, string>();
+  const descriptionFieldNameById = new Map<string, string>();
+
+  for (const product of products) {
+    // google_title/google_description, when set, are what actually gets sent
+    // to Google — a store can write different copy for Google's algorithm
+    // than what a human visitor sees. Falls back to name/description when
+    // unset, which is every product on every store before this field existed.
+    titleFieldNameById.set(product.id, product.google_title ? "google_title" : "name");
+    descriptionFieldNameById.set(product.id, product.google_description ? "google_description" : "description");
+    const sourceFields: TranslatedFields = {
+      name: product.google_title || product.name,
+      // description is rich-text HTML (see product-form.tsx's RichTextEditor)
+      // — Google's spec wants plain text, so it's always stripped here
+      // regardless of source. stripHtml is a no-op on already-plain text
+      // (e.g. google_description overrides), so this is safe either way.
+      description: stripHtml(product.google_description || product.description || product.name),
+      short_description: product.short_description,
+      slug: product.slug,
+    };
+    sourceFieldsById.set(product.id, sourceFields);
+
+    const map = new Map<string, TranslatedFields>();
+    map.set(store.google_content_language, sourceFields);
+    result.set(product.id, map);
+  }
 
   const { data: rows } = await supabaseAdmin
     .from("translations")
-    .select("locale, field_name, value")
+    .select("entity_id, locale, field_name, value")
     .eq("store_id", store.id)
     .eq("entity_type", "product")
-    .eq("entity_id", product.id);
+    .in(
+      "entity_id",
+      products.map((p) => p.id)
+    );
 
   for (const row of rows ?? []) {
+    const map = result.get(row.entity_id);
+    const sourceFields = sourceFieldsById.get(row.entity_id);
+    if (!map || !sourceFields) continue;
     if (!map.has(row.locale)) map.set(row.locale, { ...sourceFields });
     const entry = map.get(row.locale)!;
-    if (row.field_name === titleFieldName) entry.name = row.value;
-    if (row.field_name === descriptionFieldName) entry.description = stripHtml(row.value);
+    if (row.field_name === titleFieldNameById.get(row.entity_id)) entry.name = row.value;
+    if (row.field_name === descriptionFieldNameById.get(row.entity_id)) entry.description = stripHtml(row.value);
     if (row.field_name === "short_description") entry.short_description = row.value;
     if (row.field_name === "slug") entry.slug = row.value;
   }
 
-  return map;
+  return result;
 }
 
 /**

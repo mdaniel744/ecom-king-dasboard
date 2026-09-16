@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildProductLink, getTranslationsByLocale } from "@/lib/google-merchant";
-import { convertPriceForMarket } from "@/lib/market-pricing";
+import { buildProductLink, getTranslationsByLocaleBatch } from "@/lib/google-merchant";
+import { createMarketPriceConverter } from "@/lib/market-pricing";
 import type { Product, Store } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -79,20 +79,32 @@ export async function GET(
 
   const eligibleProducts = (products ?? []).filter((p: Product) => p.images?.length > 0);
 
-  const items = await Promise.all(
-    eligibleProducts.map(async (p: Product) => {
-      const textByLocale = await getTranslationsByLocale(store as Store, p);
+  // One translations query and one exchange-rate/VAT lookup for the whole
+  // feed, instead of both being redone per product. Fine for a small
+  // catalog either way, but for a store the size of Kariv's (500+ active
+  // products) the per-product version meant 500+ individual DB round trips
+  // fired for a single feed request -- confirmed taking 2+ minutes to
+  // respond, long enough to risk Google's scheduled fetch timing out before
+  // the feed finished generating. The converter itself is shared (today's
+  // rate/VAT are the same for every product in this market); each product's
+  // own price is still passed into .convert() individually below, so this
+  // does not treat any two products as having the same price.
+  const translationsByProduct = await getTranslationsByLocaleBatch(store as Store, eligibleProducts);
+  const converter = await createMarketPriceConverter(
+    market,
+    store as Store,
+    eligibleProducts.map((p) => p.currency)
+  );
+
+  const items = eligibleProducts.map((p: Product) => {
+      const textByLocale = translationsByProduct.get(p.id)!;
       const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
       const link = buildProductLink(store as Store, p, locale, text.slug);
       const hasIdentifier = Boolean(p.brand && p.mpn);
       const productType = breadcrumb(p.category_id);
       const additionalImages = (p.images ?? []).slice(1, 10);
-      const [marketPrice, marketSalePrice] = await Promise.all([
-        convertPriceForMarket(p.price!, p.currency, market, store as Store),
-        p.sale_price
-          ? convertPriceForMarket(p.sale_price, p.currency, market, store as Store)
-          : Promise.resolve(null),
-      ]);
+      const marketPrice = converter.convert(p.price!, p.currency);
+      const marketSalePrice = p.sale_price ? converter.convert(p.sale_price, p.currency) : null;
 
       return `
   <item>
@@ -114,8 +126,7 @@ export async function GET(
     ${additionalImages.map((img: string) => `<g:additional_image_link>${escapeXml(img)}</g:additional_image_link>`).join("\n    ")}
     <g:identifier_exists>${hasIdentifier ? "yes" : "no"}</g:identifier_exists>
   </item>`;
-    })
-  );
+  });
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:g="http://base.google.com/ns/1.0" xmlns:c="http://base.google.com/cns/1.0" version="2.0">
