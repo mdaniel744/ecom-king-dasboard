@@ -46,10 +46,13 @@ import { ReadinessBadge } from "@/app/dashboard/products/readiness-badge";
 import { SyncGoogleButton } from "@/app/dashboard/products/sync-google-button";
 import { manageCatalogProducts } from "@/app/dashboard/products/actions";
 import { checkProductForMerchant } from "@/lib/merchant-rules";
+import {
+  PRODUCT_PAGE_SIZE_OPTIONS,
+  parseProductPageSize,
+  productsListHref,
+  type ProductPageSize,
+} from "@/lib/product-list-pagination";
 import type { Product, ProductFamily, Store } from "@/lib/types";
-
-const DEFAULT_PAGE_SIZE = 50;
-const PAGE_SIZE_OPTIONS = [50, 100, 250] as const;
 
 export type CatalogEntry =
   | {
@@ -97,12 +100,22 @@ function familyGoogleStatus(variants: Product[]): Product["google_sync_status"] 
   return "not_synced";
 }
 
-export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; store: Store }) {
+export function AllProductsTable({
+  entries,
+  store,
+  initialPage,
+  initialPageSize,
+}: {
+  entries: CatalogEntry[];
+  store: Store;
+  initialPage: number;
+  initialPageSize: ProductPageSize;
+}) {
   const router = useRouter();
   const tableTopRef = useRef<HTMLDivElement>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<ProductPageSize>(initialPageSize);
+  const [currentPage, setCurrentPage] = useState(initialPage);
   const [isPending, startTransition] = useTransition();
   const entryKeys = useMemo(() => entries.map(entryKey), [entries]);
   const allSelected = entryKeys.length > 0 && entryKeys.every((key) => selectedKeys.has(key));
@@ -121,11 +134,23 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
   }, [entryKeys]);
 
   useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
+    if (currentPage <= totalPages) return;
+    setCurrentPage(totalPages);
+    window.history.replaceState(
+      null,
+      "",
+      productsListHref(totalPages, pageSize)
+    );
+  }, [currentPage, pageSize, totalPages]);
 
   function goToPage(page: number) {
-    setCurrentPage(Math.min(Math.max(page, 1), totalPages));
+    const nextPage = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(nextPage);
+    window.history.replaceState(
+      null,
+      "",
+      productsListHref(nextPage, pageSize)
+    );
     window.requestAnimationFrame(() => {
       tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -236,15 +261,21 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
           <Select
             value={String(pageSize)}
             onValueChange={(value) => {
-              setPageSize(Number(value));
+              const nextPageSize = parseProductPageSize(value);
+              setPageSize(nextPageSize);
               setCurrentPage(1);
+              window.history.replaceState(
+                null,
+                "",
+                productsListHref(1, nextPageSize)
+              );
             }}
           >
             <SelectTrigger className="h-8 w-[82px]" aria-label="Products per page">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
-              {PAGE_SIZE_OPTIONS.map((size) => (
+              {PRODUCT_PAGE_SIZE_OPTIONS.map((size) => (
                 <SelectItem key={size} value={String(size)}>
                   {size}
                 </SelectItem>
@@ -427,7 +458,7 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
                     <div className="flex justify-end gap-2">
                       <Button asChild variant="ghost" size="icon">
                         <Link
-                          href={`/dashboard/products/${product.id}/edit`}
+                          href={`/dashboard/products/${product.id}/edit?returnPage=${displayedPage}&returnPageSize=${pageSize}`}
                           aria-label={`Edit ${product.name}`}
                         >
                           <Pencil className="h-4 w-4" />

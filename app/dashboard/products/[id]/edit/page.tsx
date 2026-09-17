@@ -6,14 +6,28 @@ import { ProductForm } from "@/app/dashboard/products/product-form";
 import { updateProduct } from "@/app/dashboard/products/actions";
 import { getPrimaryStoreCurrency, getStoreMarketPricing } from "@/lib/merchant-locales";
 import { configuredProductContentLocales } from "@/lib/product-content-language";
+import {
+  parseProductPage,
+  parseProductPageSize,
+  productsListHref,
+  type ProductListQueryValue,
+} from "@/lib/product-list-pagination";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
 
 export default async function EditProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, ProductListQueryValue>>;
 }) {
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const hasProductListContext =
+    query.returnPage !== undefined || query.returnPageSize !== undefined;
+  const productsHref = productsListHref(
+    parseProductPage(query.returnPage),
+    parseProductPageSize(query.returnPageSize)
+  );
   const store = await getCurrentStore();
 
   const [{ data: product }, { data: categories }, { data: brands }, { data: collections }, { data: families }, attributeDefs, attributePresets] =
@@ -53,6 +67,8 @@ export default async function EditProductPage({
       contentLanguageOptions={configuredProductContentLocales(store)}
       defaultCurrency={getPrimaryStoreCurrency(store)}
       marketPricing={getStoreMarketPricing(store)}
+      backHref={hasProductListContext ? productsHref : undefined}
+      successHref={hasProductListContext ? productsHref : undefined}
     />
   );
 }
