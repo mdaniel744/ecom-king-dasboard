@@ -6,6 +6,7 @@ import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules
 import { stripHtml } from "@/lib/html";
 import { convertPriceForMarket } from "@/lib/market-pricing";
 import { defaultLocaleForMarket } from "@/lib/merchant-locales";
+import { resolveProductMpn } from "@/lib/product-identifiers";
 
 const MERCHANT_API_BASE = "https://merchantapi.googleapis.com/products/v1";
 
@@ -328,10 +329,12 @@ async function buildProductInput(
     throw new GoogleMerchantValidationError(summary);
   }
 
+  const effectiveMpn = resolveProductMpn(product);
+
   // Google's actual rule: a valid identifier is a GTIN, or brand+MPN
   // together. Brand alone is not sufficient (real-world feeds we compared
   // against use brand+MPN with no GTIN at all, which is what this matches).
-  const hasIdentifier = Boolean(product.gtin || (product.brand && product.mpn));
+  const hasIdentifier = Boolean(product.gtin || (product.brand && effectiveMpn));
   const [marketPrice, marketSalePrice] = await Promise.all([
     convertPriceForMarket(product.price!, product.currency, feedLabel, store),
     product.sale_price
@@ -369,7 +372,7 @@ async function buildProductInput(
         : undefined,
       brand: product.brand ?? undefined,
       gtins: product.gtin ? [product.gtin] : undefined,
-      mpn: product.mpn ?? undefined,
+      mpn: effectiveMpn ?? undefined,
       googleProductCategory: product.google_product_category ?? undefined,
       productTypes: productType ? [productType] : undefined,
       // Per Google's spec: explicitly declare no identifier rather than

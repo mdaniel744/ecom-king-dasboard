@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildProductLink, getTranslationsByLocaleBatch } from "@/lib/google-merchant";
 import { createMarketPriceConverter } from "@/lib/market-pricing";
 import type { Product, Store } from "@/lib/types";
+import { resolveProductMpn } from "@/lib/product-identifiers";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +101,8 @@ export async function GET(
       const textByLocale = translationsByProduct.get(p.id)!;
       const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
       const link = buildProductLink(store as Store, p, locale, text.slug);
-      const hasIdentifier = Boolean(p.brand && p.mpn);
+      const effectiveMpn = resolveProductMpn(p);
+      const hasIdentifier = Boolean(p.gtin || (p.brand && effectiveMpn));
       const productType = breadcrumb(p.category_id);
       const additionalImages = (p.images ?? []).slice(1, 10);
       const marketPrice = converter.convert(p.price!, p.currency);
@@ -120,7 +122,8 @@ export async function GET(
     <g:availability>${p.status === "active" ? "in_stock" : "out_of_stock"}</g:availability>
     <g:price>${escapeXml(formatPrice(marketPrice.amount, marketPrice.currency))}</g:price>
     ${marketSalePrice ? `<g:sale_price>${escapeXml(formatPrice(marketSalePrice.amount, marketSalePrice.currency))}</g:sale_price>` : ""}
-    ${p.mpn ? `<g:mpn>${escapeXml(p.mpn)}</g:mpn>` : "<g:mpn/>"}
+    ${p.gtin ? `<g:gtin>${escapeXml(p.gtin)}</g:gtin>` : ""}
+    ${effectiveMpn ? `<g:mpn>${escapeXml(effectiveMpn)}</g:mpn>` : "<g:mpn/>"}
     ${p.brand ? `<g:brand>${escapeXml(p.brand)}</g:brand>` : ""}
     <g:canonical_link>${escapeXml(link)}</g:canonical_link>
     ${additionalImages.map((img: string) => `<g:additional_image_link>${escapeXml(img)}</g:additional_image_link>`).join("\n    ")}

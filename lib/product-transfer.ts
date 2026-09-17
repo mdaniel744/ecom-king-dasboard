@@ -299,7 +299,7 @@ export function parseProductImportRow(raw: Record<string, unknown>): ParsedProdu
     family_slug: nullableText(raw.family_slug),
     reference_number: nullableText(raw.reference_number),
     gtin: nullableText(raw.gtin),
-    mpn: nullableText(raw.mpn),
+    mpn: nullableText(raw.mpn) || nullableText(raw.reference_number),
     google_product_category: nullableText(raw.google_product_category),
     google_title: nullableText(raw.google_title),
     google_description: nullableText(raw.google_description),

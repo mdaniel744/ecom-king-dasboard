@@ -230,7 +230,7 @@ function productPayload(
     ...relations,
     reference_number: product.reference_number,
     gtin: product.gtin,
-    mpn: product.mpn,
+    mpn: product.mpn || product.reference_number,
     google_product_category: product.google_product_category,
     google_title: product.google_title,
     google_description: product.google_description,
