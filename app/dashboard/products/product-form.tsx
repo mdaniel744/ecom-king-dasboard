@@ -41,6 +41,7 @@ import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
+import { productDescriptionTextToHtml } from "@/lib/product-description-format";
 import { ProductMediaManager } from "./product-media-manager";
 import { AttributePresetPicker } from "./attribute-preset-picker";
 import { previewMarketPrices, type MarketPricePreview } from "./actions";
@@ -271,20 +272,6 @@ export function ProductForm({
         toast.error(result.error);
       }
     });
-  }
-
-  // AI Write returns plain text; the description field is rich-text HTML,
-  // so wrap each paragraph in <p> (escaping first) rather than dropping raw
-  // plain text into the editor as one unbroken line.
-  function plainTextToParagraphHtml(text: string): string {
-    const escape = (s: string) =>
-      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return text
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .map((p) => `<p>${escape(p)}</p>`)
-      .join("");
   }
 
   function updateAttr(index: number, field: 0 | 1, newValue: string) {
@@ -549,12 +536,12 @@ export function ProductForm({
                     <Label htmlFor="description">Description <span className="text-xs font-normal text-muted-foreground">(recommended for Google)</span></Label>
                     <FieldInfo
                       title="Product Description"
-                      description="The full product description shown on the product detail page and sent to Google Shopping. Be detailed and accurate — include materials, dimensions, certifications, and use cases. Google uses this to match your product to search queries. Minimum 20 characters for Google approval."
+                      description="The full product description shown on the product page and sent to Google Shopping. AI Write creates a factual 150–250-word structure with an entity-rich opening, specification bullets, and utility details using only the product information supplied on this form."
                     />
                   </div>
                   <AIWriteButton
                     getValue={() => productDescriptionAiSource()}
-                    onResult={(text) => setDescription(plainTextToParagraphHtml(text))}
+                    onResult={(text) => setDescription(productDescriptionTextToHtml(text))}
                     fieldRole="description"
                     targetLocale={contentLanguage}
                     sourceLocale="auto"
@@ -1139,7 +1126,7 @@ export function ProductForm({
                 <Textarea
                   id="google_description"
                   name="google_description"
-                  rows={3}
+                  rows={9}
                   maxLength={5000}
                   value={googleDescription}
                   onChange={(event) => setGoogleDescription(event.target.value)}

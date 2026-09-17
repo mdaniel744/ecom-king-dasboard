@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:gmc": "node --test tests/gmc-product-description.test.mjs tests/product-identifiers.test.mjs",
+    "test:gmc": "node --test tests/gmc-product-description.test.mjs tests/product-description-format.test.mjs tests/product-identifiers.test.mjs",
     "test:translations": "node --test tests/product-content-language.test.mjs tests/kariv-market-locale.test.mjs tests/cnb-rates.test.mjs"
   },
   "dependencies": {

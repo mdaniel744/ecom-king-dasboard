@@ -8,22 +8,22 @@ export const GMC_FORBIDDEN_DESCRIPTION_PATTERNS = [
   {
     category: "Promotional CTAs",
     pattern:
-      /\b(buy now|for sale|order today|shop now|add to cart|click here|limited offer|special deal)\b/gi,
+      /\b(buy now|purchase now|for sale|order today|order now|shop now|add to cart|click here|limited offer|limited stock|special deal|special offer)\b/gi,
   },
   {
     category: "Pricing or discount terms",
     pattern:
-      /\b(cheap|discount|discounted|best price|lowest price|sale price|bargain|save \d+%?)\b/gi,
+      /\b(cheap|discount|discounted|best price|lowest price|sale price|best deal|bargain|clearance|save \d+%?)\b/gi,
   },
   {
     category: "Guarantees",
     pattern:
-      /\b(guarantee|guaranteed|money-back|satisfaction guaranteed|risk-free|100% money back)\b/gi,
+      /\b(100% guaranteed|100% money back|satisfaction guaranteed|money-back|risk-free|guarantee|guaranteed)\b/gi,
   },
   {
     category: "Shipping or returns claims",
     pattern:
-      /\b(free shipping|fast delivery|express shipping|easy returns|30-day return)\b/gi,
+      /\b(free shipping|free delivery|fast delivery|same-day delivery|next-day delivery|express shipping|easy returns|30-day return)\b/gi,
   },
 ] as const;
 
