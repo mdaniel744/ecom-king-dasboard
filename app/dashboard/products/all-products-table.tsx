@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Eye, FilePenLine, ImageIcon, Layers3, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  FilePenLine,
+  ImageIcon,
+  Layers3,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +33,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DeleteProductButton } from "@/app/dashboard/products/delete-product-button";
 import { GoogleStatusBadge } from "@/app/dashboard/products/google-status-badge";
 import { ReadinessBadge } from "@/app/dashboard/products/readiness-badge";
@@ -30,6 +47,9 @@ import { SyncGoogleButton } from "@/app/dashboard/products/sync-google-button";
 import { manageCatalogProducts } from "@/app/dashboard/products/actions";
 import { checkProductForMerchant } from "@/lib/merchant-rules";
 import type { Product, ProductFamily, Store } from "@/lib/types";
+
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [50, 100, 250] as const;
 
 export type CatalogEntry =
   | {
@@ -79,15 +99,37 @@ function familyGoogleStatus(variants: Product[]): Product["google_sync_status"] 
 
 export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; store: Store }) {
   const router = useRouter();
+  const tableTopRef = useRef<HTMLDivElement>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
   const [isPending, startTransition] = useTransition();
   const entryKeys = useMemo(() => entries.map(entryKey), [entries]);
   const allSelected = entryKeys.length > 0 && entryKeys.every((key) => selectedKeys.has(key));
+  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+  const displayedPage = Math.min(currentPage, totalPages);
+  const pageStart = (displayedPage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, entries.length);
+  const visibleEntries = useMemo(
+    () => entries.slice(pageStart, pageEnd),
+    [entries, pageEnd, pageStart]
+  );
 
   useEffect(() => {
     const available = new Set(entryKeys);
     setSelectedKeys((current) => new Set([...current].filter((key) => available.has(key))));
   }, [entryKeys]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  function goToPage(page: number) {
+    setCurrentPage(Math.min(Math.max(page, 1), totalPages));
+    window.requestAnimationFrame(() => {
+      tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   function toggleEntry(key: string, checked: boolean) {
     setSelectedKeys((current) => {
@@ -137,7 +179,7 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div ref={tableTopRef} className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex flex-wrap items-center gap-3 border-b bg-muted/20 px-4 py-3">
         <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
           <input
@@ -188,6 +230,28 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
             ? "Select products to manage them together"
             : `${selectedKeys.size} selected`}
         </span>
+
+        <div className="ml-auto flex items-center gap-2 text-sm">
+          <span className="whitespace-nowrap text-muted-foreground">Products per page</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => {
+              setPageSize(Number(value));
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="h-8 w-[82px]" aria-label="Products per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -215,7 +279,7 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
               </TableRow>
             )}
 
-            {entries.map((entry) => {
+            {visibleEntries.map((entry) => {
               const key = entryKey(entry);
               const selected = selectedKeys.has(key);
 
@@ -379,6 +443,43 @@ export function AllProductsTable({ entries, store }: { entries: CatalogEntry[]; 
           </TableBody>
         </Table>
       </div>
+
+      {entries.length > 0 && (
+        <div className="flex flex-col gap-3 border-t bg-muted/10 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-muted-foreground">
+            Showing <span className="font-medium text-foreground">{pageStart + 1}</span>–
+            <span className="font-medium text-foreground">{pageEnd}</span> of{" "}
+            <span className="font-medium text-foreground">{entries.length}</span> products
+          </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => goToPage(displayedPage - 1)}
+              disabled={displayedPage === 1}
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Previous
+            </Button>
+            <span className="min-w-24 text-center text-muted-foreground">
+              Page <span className="font-medium text-foreground">{displayedPage}</span> of{" "}
+              <span className="font-medium text-foreground">{totalPages}</span>
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => goToPage(displayedPage + 1)}
+              disabled={displayedPage === totalPages}
+            >
+              Next
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
