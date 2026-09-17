@@ -201,7 +201,7 @@ export function ProductForm({
     const categoryName = categories.find((item) => item.id === selectedCategoryId)?.name;
     const selectedBrand = brands.find((item) => item.id === selectedBrandId)?.name || brand;
     const collectionName = collections.find((item) => item.id === selectedCollectionId)?.name;
-    const currentDescription = preferredDescription?.trim() || stripHtml(description).trim();
+    const currentDescription = stripHtml(preferredDescription?.trim() || description).trim();
     const suppliedAttributes = attrs
       .filter(([key, value]) => key.trim() && value.trim())
       .map(([key, value]) => `${key.trim()}: ${value.trim()}`);
@@ -536,7 +536,7 @@ export function ProductForm({
                     <Label htmlFor="description">Description <span className="text-xs font-normal text-muted-foreground">(recommended for Google)</span></Label>
                     <FieldInfo
                       title="Product Description"
-                      description="The full product description shown on the product page and sent to Google Shopping. AI Write creates a factual 150–250-word structure with an entity-rich opening, specification bullets, and utility details using only the product information supplied on this form."
+                      description="AI Write develops two paragraphs about the product's purpose, design, and practical use, followed by a short technical summary. Add accurate attributes to give the writer more useful detail."
                     />
                   </div>
                   <AIWriteButton

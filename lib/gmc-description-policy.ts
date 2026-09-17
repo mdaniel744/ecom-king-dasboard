@@ -13,12 +13,12 @@ export const GMC_FORBIDDEN_DESCRIPTION_PATTERNS = [
   {
     category: "Pricing or discount terms",
     pattern:
-      /\b(cheap|discount|discounted|best price|lowest price|sale price|best deal|bargain|clearance|save \d+%?)\b/gi,
+      /\b(cheap|affordable|discount|discounted|best price|lowest price|sale price|best deal|bargain|clearance|save \d+%?)\b/gi,
   },
   {
     category: "Guarantees",
     pattern:
-      /\b(100% guaranteed|100% money back|satisfaction guaranteed|money-back|risk-free|guarantee|guaranteed)\b/gi,
+      /\b(100% guaranteed|100% money back|lifetime warranty|satisfaction guaranteed|money-back|risk-free|guarantee|guaranteed)\b/gi,
   },
   {
     category: "Shipping or returns claims",
