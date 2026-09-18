@@ -1261,15 +1261,17 @@ export function ProductForm({
         <TranslationEditor
           entityType="product"
           entityId={product?.id}
-          enabledLocales={enabledLocales}
-          sourceValues={{ name: product?.name, short_description: product?.short_description,
+          enabledLocales={enabledLocales.filter((locale) => locale !== storeSourceLocale)}
+          sourceValues={{ name, short_description: shortDescription, description,
+            meta_title: metaTitle, meta_description: metaDescription }}
+          savedSourceValues={{ name: product?.name, short_description: product?.short_description,
             description: product?.description, meta_title: product?.meta_title, meta_description: product?.meta_description }}
           fields={[
             { name: "name", label: "Title" },
-            { name: "short_description", label: "Short Description" },
+            { name: "short_description", label: "Short Description", multiline: true, sourceLabel: "Original product details" },
             { name: "description", label: "Description", multiline: true },
-            { name: "meta_title", label: "SEO Meta Title" },
-            { name: "meta_description", label: "SEO Meta Description", multiline: true },
+            { name: "meta_title", label: "SEO Meta Title", sourceLabel: "Search Engine Listing" },
+            { name: "meta_description", label: "SEO Meta Description", multiline: true, sourceLabel: "Search Engine Listing" },
           ]}
         />
       </div>

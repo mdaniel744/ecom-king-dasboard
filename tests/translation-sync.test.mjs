@@ -54,6 +54,14 @@ test("the actual sync saves all three fields into German and Czech translation r
   assert.equal(result.failures.length, 0);
   assert.equal(f.rows.length, 6);
   assert.ok(f.rows.every((row) => row.store_id === "kariv" && row.entity_id === "watch"));
+  for (const call of f.calls) assert.equal(call.text, fields[call.fieldRole]);
+});
+test("provided short descriptions and SEO copy translate for other stores and their configured languages too", async () => {
+  const f = fixture();
+  const result = await f.sync({ ...input, store: { id: "other-store", google_content_language: "en", enabled_locales: ["en", "fr", "pl"] } });
+  assert.equal(result.succeeded, 6);
+  assert.deepEqual([...new Set(f.calls.map((call) => call.targetLocale))].sort(), ["fr", "pl"]);
+  assert.ok(f.rows.every((row) => row.store_id === "other-store"));
 });
 test("an SEO-only edit refreshes AI copy and flags the human field without replacing it", async () => {
   const f = fixture([

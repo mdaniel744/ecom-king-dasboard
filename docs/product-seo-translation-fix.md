@@ -59,3 +59,20 @@ public catalog credentials rendered exact matches for the saved German and
 Czech SEO titles, SEO descriptions, and visible short descriptions on the
 Cartier Santos WSSA0061 page. No production code was deployed and the optional
 database webhook SQL was not executed.
+
+## Source visibility follow-up
+
+The product form now passes its current SEO and short-description values to
+the Translations editor alongside the last saved values. Fresh AI-written
+copy is labelled as unsaved, not as missing source text. Saving the product
+triggers the existing automatic translation workflow. Retry is unavailable
+until changed source text is saved, so it cannot silently translate the old
+database values instead. Expand a field's source to see its exact text from
+Search Engine Listing or Original product details.
+
+The follow-up audit of all 738 Kariv products planned no missing/invalid
+short-description or SEO repairs. The previously documented German-source
+short description remains flagged for review; human corrections are retained.
+No database changes were made in this follow-up. All 28 translation tests,
+including rendered-editor checks and exact source-field mapping, and the
+production build passed.
