@@ -7,6 +7,8 @@ import { getPrimaryStoreCurrency, getStoreMarketPricing } from "@/lib/merchant-l
 import { configuredProductContentLocales } from "@/lib/product-content-language";
 import type { Brand, Category, Collection, ProductFamily } from "@/lib/types";
 
+export const maxDuration = 300;
+
 export default async function NewProductPage() {
   const store = await getCurrentStore();
   const [{ data: categories }, { data: brands }, { data: collections }, { data: families }, attributeDefs, attributePresets] =

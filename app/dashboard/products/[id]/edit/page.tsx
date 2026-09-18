@@ -14,6 +14,8 @@ import {
 } from "@/lib/product-list-pagination";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
 
+export const maxDuration = 300;
+
 export default async function EditProductPage({
   params,
   searchParams,

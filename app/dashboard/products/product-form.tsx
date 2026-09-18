@@ -1262,6 +1262,8 @@ export function ProductForm({
           entityType="product"
           entityId={product?.id}
           enabledLocales={enabledLocales}
+          sourceValues={{ name: product?.name, short_description: product?.short_description,
+            description: product?.description, meta_title: product?.meta_title, meta_description: product?.meta_description }}
           fields={[
             { name: "name", label: "Title" },
             { name: "short_description", label: "Short Description" },

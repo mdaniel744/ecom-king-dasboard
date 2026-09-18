@@ -209,7 +209,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     const payload = { ...rawPayload, ...prepared.primary };
     const { data: existingProduct } = await supabaseAdmin
       .from("products")
-      .select("family_id, name, short_description, description")
+      .select("family_id, name, short_description, description, meta_title, meta_description, badge, google_title, google_description")
       .eq("id", productId)
       .eq("store_id", store.id)
       .maybeSingle();
@@ -230,7 +230,10 @@ export async function updateProduct(productId: string, formData: FormData): Prom
         ? changedProductContentFields(existingProduct, prepared.primary)
         : [];
     after(async () => {
-      await syncProductTranslations(store, product as Product, { sourceChangedFields });
+      await syncProductTranslations(store, product as Product, {
+        onlyMissing: prepared.actualLocale === store.google_content_language,
+        sourceChangedFields,
+      });
     });
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");

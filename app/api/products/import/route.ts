@@ -438,7 +438,7 @@ export async function POST(request: NextRequest) {
     after(async () => {
       await mapBounded(preparedRows, (item) =>
         syncProductTranslations(store, item.payload as Product, {
-          onlyMissing: !item.isUpdate,
+          onlyMissing: !item.isUpdate || item.incomingTranslations.length === 0,
           sourceChangedFields: item.sourceChangedFields,
         })
       );

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { translateText } from "@/lib/translate";
 import { slugify } from "@/lib/slug";
 import type { Store } from "@/lib/types";
+import { shouldTranslateField, type ExistingTranslation } from "@/lib/translation-quality";
 
 type EntityType = "product" | "category" | "product_family" | "attribute_name" | "attribute_value" | "brand" | "collection" | "guide" | "faq" | "legal_page" | "website_string";
 
@@ -103,7 +104,39 @@ export async function syncTranslations({
   );
   if (fieldEntries.length === 0) return summary;
 
-  const lockedKeys = await getHumanLockedKeys(store.id, entityType, entityId);
+  const { data: existingRows, error: readError } = await supabaseAdmin
+    .from("translations")
+    .select("locale, field_name, value, translator")
+    .eq("store_id", store.id)
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId);
+  if (readError) {
+    summary.failures.push({ locale: "all", fieldName: "all", message: `Could not safely read existing translations: ${readError.message}` });
+    return summary;
+  }
+  const existing = new Map<string, ExistingTranslation>(
+    (existingRows ?? []).map((row) => [`${row.locale}:${row.field_name}`, { value: row.value, translator: row.translator }])
+  );
+  const lockedKeys = new Set([...existing].filter(([, row]) => row.translator === "human").map(([key]) => key));
+
+  // Conditional writes preserve edits made while the provider was working.
+  async function saveTranslation(locale: string, fieldName: string, value: string) {
+    const previous = existing.get(`${locale}:${fieldName}`);
+    if (previous?.translator === "human") return false;
+    const row = { store_id: store.id, entity_type: entityType, entity_id: entityId,
+      field_name: fieldName, locale, value, translator: "ai" };
+    const query = previous
+      ? supabaseAdmin.from("translations").update({ value, translator: "ai" })
+        .eq("store_id", store.id).eq("entity_type", entityType).eq("entity_id", entityId)
+        .eq("locale", locale).eq("field_name", fieldName)
+        .eq("translator", previous.translator).eq("value", previous.value)
+      : supabaseAdmin.from("translations").upsert(row, {
+        onConflict: "entity_type,entity_id,field_name,locale", ignoreDuplicates: true,
+      });
+    const { data, error } = await query.select("field_name");
+    if (error) throw error;
+    return Boolean(data?.length);
+  }
   if (sourceChangedFields.length > 0) {
     const changed = [...new Set(sourceChangedFields)].filter(Boolean);
     if (changed.length > 0) {
@@ -129,22 +162,12 @@ export async function syncTranslations({
       }
     }
   }
-  const existingKeys = new Set<string>();
-  if (onlyMissing) {
-    const { data } = await supabaseAdmin
-      .from("translations")
-      .select("locale, field_name")
-      .eq("store_id", store.id)
-      .eq("entity_type", entityType)
-      .eq("entity_id", entityId);
-    for (const row of data ?? []) existingKeys.add(`${row.locale}:${row.field_name}`);
-  }
-
   const jobs = targetLocales.flatMap((locale) =>
     fieldEntries
-      .filter(([fieldName]) => {
+      .filter(([fieldName, source]) => {
         const key = `${locale}:${fieldName}`;
-        const skip = lockedKeys.has(key) || (onlyMissing && existingKeys.has(key));
+        const skip = !shouldTranslateField({ existing: existing.get(key), source, sourceLocale,
+          targetLocale: locale, field: fieldName, onlyMissing, sourceChanged: sourceChangedFields.includes(fieldName) });
         if (skip) summary.skipped += 1;
         return !skip;
       })
@@ -161,19 +184,10 @@ export async function syncTranslations({
             isHtml: htmlFields.includes(fieldName),
           });
 
-          const { error } = await supabaseAdmin.from("translations").upsert(
-            {
-              store_id: store.id,
-              entity_type: entityType,
-              entity_id: entityId,
-              field_name: fieldName,
-              locale,
-              value: translated,
-              translator: "ai",
-            },
-            { onConflict: "entity_type,entity_id,field_name,locale" }
-          );
-          if (error) throw error;
+          if (!await saveTranslation(locale, fieldName, translated)) {
+            summary.skipped += 1;
+            return;
+          }
           summary.succeeded += 1;
 
           // Some real storefronts (STF, confirmed live) translate the
@@ -185,19 +199,7 @@ export async function syncTranslations({
           // the source-language slug was generated with.
           if (entityType === "product" && fieldName === "name" && !lockedKeys.has(`${locale}:slug`)) {
             try {
-              const { error: slugError } = await supabaseAdmin.from("translations").upsert(
-                {
-                  store_id: store.id,
-                  entity_type: entityType,
-                  entity_id: entityId,
-                  field_name: "slug",
-                  locale,
-                  value: slugify(translated),
-                  translator: "ai",
-                },
-                { onConflict: "entity_type,entity_id,field_name,locale" }
-              );
-              if (slugError) throw slugError;
+              await saveTranslation(locale, "slug", slugify(translated));
             } catch {
               // best-effort, same rationale as below
             }

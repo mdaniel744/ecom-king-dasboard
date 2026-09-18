@@ -29,6 +29,7 @@ type Props = {
   entityId?: string;
   enabledLocales: string[];
   fields: FieldDef[];
+  sourceValues?: Record<string, string | null | undefined>;
 };
 
 type TranslationsByLocale = Record<
@@ -40,24 +41,44 @@ function localeLabel(code: string): string {
   return CONTENT_LANGUAGE_OPTIONS.find((o) => o.value === code)?.label ?? code;
 }
 
-export function TranslationEditor({ entityType, entityId, enabledLocales, fields }: Props) {
+export function TranslationEditor({ entityType, entityId, enabledLocales, fields, sourceValues }: Props) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<TranslationsByLocale>({});
   const [activeLocale, setActiveLocale] = useState(enabledLocales[0] ?? "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingField, setSavingField] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  // Stable dependency even when the form constructs props inline.
+  const expectedKeys = JSON.stringify(enabledLocales.flatMap((locale) => fields
+    .filter((field) => sourceValues === undefined || sourceValues[field.name]?.trim())
+    .map((field) => [locale, field.name])));
 
   useEffect(() => {
     if (!entityId || enabledLocales.length === 0) {
       setLoading(false);
       return;
     }
-    getEntityTranslations(entityType, entityId).then((result) => {
-      setData(result);
-      setLoading(false);
-    });
-  }, [entityType, entityId, enabledLocales.length]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const required = JSON.parse(expectedKeys) as [string, string][];
+    async function refresh() {
+      try {
+        const result = await getEntityTranslations(entityType, entityId!);
+        if (cancelled) return;
+        setData(result);
+        if (entityType === "product" && ++attempts < 20 && required.some(([locale, field]) => !result[locale]?.[field]?.value.trim())) {
+          timer = setTimeout(refresh, 3000);
+        }
+      } catch {
+        if (!cancelled) toast.error("Could not load translations. Please refresh and try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void refresh();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [entityType, entityId, enabledLocales.length, expectedKeys]);
 
   if (enabledLocales.length === 0) return null;
 
@@ -93,7 +114,7 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
   }
 
   function hasTranslation(locale: string, field: string): boolean {
-    return Boolean(data[locale]?.[field]);
+    return Boolean(data[locale]?.[field]?.value.trim());
   }
 
   async function handleSave(locale: string, field: string) {
@@ -237,7 +258,9 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
                       )
                     ) : (
                       <span className="text-[10px] text-muted-foreground">
-                        Not translated yet — showing source text on the storefront
+                        {sourceValues !== undefined && !sourceValues[field.name]?.trim()
+                          ? "No source text — add it and save to translate"
+                          : "Translation pending — refreshes automatically"}
                       </span>
                     )}
                     {needsReview && (

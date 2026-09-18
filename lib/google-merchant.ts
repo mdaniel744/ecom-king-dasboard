@@ -7,6 +7,12 @@ import { stripHtml } from "@/lib/html";
 import { convertPriceForMarket } from "@/lib/market-pricing";
 import { defaultLocaleForMarket } from "@/lib/merchant-locales";
 import { resolveProductMpn } from "@/lib/product-identifiers";
+import {
+  loadMerchantTranslationRows,
+  MERCHANT_TRANSLATION_FIELDS,
+  selectMerchantTranslation,
+  type TranslatedFields,
+} from "@/lib/merchant-translations";
 
 const MERCHANT_API_BASE = "https://merchantapi.googleapis.com/products/v1";
 
@@ -130,18 +136,11 @@ function getMarketLocaleCombos(store: Store): { market: string; locale: string }
   }));
 }
 
-export type TranslatedFields = { name: string; description: string; short_description: string | null; slug: string };
+export type { TranslatedFields } from "@/lib/merchant-translations";
 
 /**
- * Fetches every translation row for this product once, then returns a
- * per-locale lookup of translated name/description/short_description,
- * falling back to the product's own (source-language) fields when a
- * translation row is missing for a given locale/field — same fallback rule
- * storefronts already use, applied here so Google never gets a blank field.
- *
- * Exported for reuse by the XML feed route (app/api/feeds/.../google.xml) —
- * both sync paths must build translated text the exact same way, or a
- * store's API-push and XML-feed listings could disagree.
+ * Both Google submission paths require complete translated title/description
+ * pairs. A missing target-language field must never silently become English.
  */
 export async function getTranslationsByLocale(
   store: Store,
@@ -152,71 +151,56 @@ export async function getTranslationsByLocale(
 }
 
 /**
- * Same result as calling getTranslationsByLocale once per product, but with
- * a single translations query for the whole batch instead of one query per
- * product. The XML feed route (app/api/feeds/.../google.xml) was calling the
- * per-product version inside a loop over every active product -- fine for a
- * small catalog, but for a store the size of Kariv's (500+ products) that
- * meant 500+ sequential/parallel-but-still-individual queries fired at once,
- * taking well over two minutes to respond and risking Google's scheduled
- * fetch timing out on the request entirely. Confirmed the other stores never
- * hit this because their catalogs are an order of magnitude smaller.
+ * Load bounded product batches and every response page. Large IN filters
+ * exceed HTTP URL limits, while unpaginated responses silently stop at the
+ * database row limit. Restrict XML requests to their requested language.
  */
 export async function getTranslationsByLocaleBatch(
   store: Store,
-  products: Product[]
+  products: Product[],
+  requestedLocales?: string[]
 ): Promise<Map<string, Map<string, TranslatedFields>>> {
   const result = new Map<string, Map<string, TranslatedFields>>();
   if (products.length === 0) return result;
 
-  const sourceFieldsById = new Map<string, TranslatedFields>();
-  const titleFieldNameById = new Map<string, string>();
-  const descriptionFieldNameById = new Map<string, string>();
-
-  for (const product of products) {
-    // google_title/google_description, when set, are what actually gets sent
-    // to Google — a store can write different copy for Google's algorithm
-    // than what a human visitor sees. Falls back to name/description when
-    // unset, which is every product on every store before this field existed.
-    titleFieldNameById.set(product.id, product.google_title ? "google_title" : "name");
-    descriptionFieldNameById.set(product.id, product.google_description ? "google_description" : "description");
-    const sourceFields: TranslatedFields = {
-      name: product.google_title || product.name,
-      // description is rich-text HTML (see product-form.tsx's RichTextEditor)
-      // — Google's spec wants plain text, so it's always stripped here
-      // regardless of source. stripHtml is a no-op on already-plain text
-      // (e.g. google_description overrides), so this is safe either way.
-      description: stripHtml(product.google_description || product.description || product.name),
-      short_description: product.short_description,
-      slug: product.slug,
-    };
-    sourceFieldsById.set(product.id, sourceFields);
-
-    const map = new Map<string, TranslatedFields>();
-    map.set(store.google_content_language, sourceFields);
-    result.set(product.id, map);
+  const sourceLocale = store.google_content_language.trim().toLowerCase();
+  const locales = [...new Set((requestedLocales ?? [
+    ...(store.enabled_locales ?? []), ...(store.google_push_locales ?? []),
+  ]).map((locale) => locale.trim().toLowerCase()))].filter((locale) => locale && locale !== sourceLocale);
+  const rows = locales.length ? await loadMerchantTranslationRows(
+    products.map((product) => product.id),
+    async (ids, from, to) => await supabaseAdmin
+      .from("translations")
+      .select("entity_id, locale, field_name, value")
+      .eq("store_id", store.id)
+      .eq("entity_type", "product")
+      .in("entity_id", ids)
+      .in("locale", locales)
+      .in("field_name", [...MERCHANT_TRANSLATION_FIELDS])
+      .order("id")
+      .range(from, to)
+  ) : [];
+  const byProductLocale = new Map<string, Map<string, string>>();
+  for (const row of rows) {
+    const key = `${row.entity_id}:${row.locale}`;
+    const fields = byProductLocale.get(key) ?? new Map<string, string>();
+    fields.set(row.field_name, stripHtml(row.value));
+    byProductLocale.set(key, fields);
   }
-
-  const { data: rows } = await supabaseAdmin
-    .from("translations")
-    .select("entity_id, locale, field_name, value")
-    .eq("store_id", store.id)
-    .eq("entity_type", "product")
-    .in(
-      "entity_id",
-      products.map((p) => p.id)
-    );
-
-  for (const row of rows ?? []) {
-    const map = result.get(row.entity_id);
-    const sourceFields = sourceFieldsById.get(row.entity_id);
-    if (!map || !sourceFields) continue;
-    if (!map.has(row.locale)) map.set(row.locale, { ...sourceFields });
-    const entry = map.get(row.locale)!;
-    if (row.field_name === titleFieldNameById.get(row.entity_id)) entry.name = row.value;
-    if (row.field_name === descriptionFieldNameById.get(row.entity_id)) entry.description = stripHtml(row.value);
-    if (row.field_name === "short_description") entry.short_description = row.value;
-    if (row.field_name === "slug") entry.slug = row.value;
+  for (const product of products) {
+    const plainProduct = {
+      ...product,
+      description: stripHtml(product.description || ""),
+      google_description: stripHtml(product.google_description || ""),
+    };
+    const map = new Map<string, TranslatedFields>();
+    map.set(sourceLocale, selectMerchantTranslation(plainProduct, sourceLocale, sourceLocale, new Map())!);
+    for (const locale of locales) {
+      const fields = selectMerchantTranslation(plainProduct, sourceLocale, locale,
+        byProductLocale.get(`${product.id}:${locale}`) ?? new Map());
+      if (fields) map.set(locale, fields);
+    }
+    result.set(product.id, map);
   }
 
   return result;
@@ -418,8 +402,11 @@ export async function upsertGoogleProduct(
   const results: { market: string; locale: string; name?: string; error?: string }[] = [];
 
   for (const { market: feedLabel, locale } of combos) {
-    const text = textByLocale.get(locale) ?? textByLocale.get(store.google_content_language)!;
     try {
+      const text = textByLocale.get(locale);
+      if (!text) {
+        throw new GoogleMerchantValidationError(`Missing ${locale} product title or description translation. Complete the translation before syncing.`);
+      }
       const body = await buildProductInput(store, product, locale, feedLabel, text, productType);
       const res = await client.request({
         url: `${MERCHANT_API_BASE}/accounts/${accountId}/productInputs:insert?dataSource=${encodeURIComponent(dataSource)}`,

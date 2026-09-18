@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   }
 
   const summary = await syncProductTranslations(store as Store, product as Product, {
-    onlyMissing: parsed.data.operation === "create",
+    onlyMissing: true,
     sourceChangedFields: parsed.data.operation === "update" ? parsed.data.changedFields : [],
   });
   return NextResponse.json({

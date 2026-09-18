@@ -4,6 +4,7 @@
  * Dry run: node scripts/repair-kariv-product-translations.mjs
  * Apply:   node scripts/repair-kariv-product-translations.mjs --apply --limit all
  * Resume:  node scripts/repair-kariv-product-translations.mjs --apply --limit all --resume
+ * Narrow a repair with --product-ids <comma-separated UUIDs> --locale cs --field description.
  * Restore: node scripts/repair-kariv-product-translations.mjs --rollback <backup.json> \
  *            --confirm-rollback 7efd71bc-0287-4f40-8a2f-1de330c49522
  */
@@ -18,7 +19,8 @@ const REPORTS = resolve(ROOT, "reports");
 const STORE_ID = "7efd71bc-0287-4f40-8a2f-1de330c49522";
 const SOURCE_LOCALE = "en";
 const TARGET_LOCALES = ["de", "cs"];
-const FIELDS = ["name", "short_description", "description"];
+const FIELDS = ["name", "short_description", "description", "meta_title", "meta_description"];
+const isTitle = (field) => field === "name" || field === "meta_title";
 const PAGE_SIZE = 500;
 const MAX_CONCURRENCY = 2;
 const API_URL = "https://api.deepseek.com/chat/completions";
@@ -86,12 +88,12 @@ function translationState(source, target, locale, fieldName) {
   if (target.translator === "human") return "human";
   const detected = detectLanguage(target.value);
   const same = comparable(source) === comparable(target.value);
-  if (same && (fieldName !== "name" || hasTranslatableTitle(source))) return "duplicated_source";
+  if (same && (!isTitle(fieldName) || hasTranslatableTitle(source))) return "duplicated_source";
   // Product titles intentionally retain official English collection/model
   // names. Once their surrounding descriptors changed, a word-frequency
   // detector is not reliable enough to reject the mixed title. Descriptions
   // should read as the target language throughout and remain strictly checked.
-  if (fieldName !== "name" && (detected === "en" || (locale === "cs" && detected === "de"))) return "invalid_language";
+  if (!isTitle(fieldName) && (detected === "en" || (locale === "cs" && detected === "de"))) return "invalid_language";
   return "valid";
 }
 function jobKey(job) { return `${job.productId}:${job.locale}:${job.fieldName}`; }
@@ -129,7 +131,7 @@ async function loadCatalog(client) {
     if (!(store.enabled_locales ?? []).includes(locale)) throw new Error(`Kariv target locale ${locale} is not enabled.`);
   }
   const [products, translations] = await Promise.all([
-    fetchAll(() => client.from("products").select("id, name, slug, short_description, description, status, updated_at").eq("store_id", STORE_ID).order("id")),
+    fetchAll(() => client.from("products").select("id, name, slug, short_description, description, meta_title, meta_description, status, updated_at").eq("store_id", STORE_ID).order("id")),
     fetchAll(() => client.from("translations").select("store_id, entity_type, entity_id, field_name, locale, value, translator, created_at, updated_at").eq("store_id", STORE_ID).eq("entity_type", "product").in("locale", [SOURCE_LOCALE, ...TARGET_LOCALES]).in("field_name", FIELDS).order("entity_id")),
   ]);
   return { store, products, translations, byKey: new Map(translations.map((row) => [`${row.entity_id}:${row.locale}:${row.field_name}`, row])) };
@@ -144,7 +146,7 @@ function sourceFor(product, fieldName, byKey) {
   // proper nouns, not Czech copy. Do not flag or rewrite them merely because
   // the lightweight detector sees accented characters.
   if (
-    fieldName === "name" &&
+    isTitle(fieldName) &&
     detected === "cs" &&
     !/\b(hodinky|pouzdro|stav|ocel|zlato|číselník|náramek)\b/i.test(primary)
   ) {
@@ -187,7 +189,7 @@ function makeBackup(catalog, plan) {
   const payload = {
     schema: "kariv-product-translation-rollback", version: 2, createdAt: new Date().toISOString(),
     tenant: { id: catalog.store.id, name: catalog.store.name, sourceLocale: catalog.store.google_content_language, enabledLocales: catalog.store.enabled_locales },
-    products: catalog.products.filter((product) => affected.has(product.id)).map(({ id, name, short_description, description, updated_at }) => ({ id, name, short_description, description, updated_at })),
+    products: catalog.products.filter((product) => affected.has(product.id)).map(({ id, name, short_description, description, meta_title, meta_description, updated_at }) => ({ id, name, short_description, description, meta_title, meta_description, updated_at })),
     translations: catalog.translations.filter((row) => affected.has(row.entity_id)),
     affectedJobKeys: plan.jobs.map(jobKey),
   };
@@ -233,9 +235,9 @@ async function translate(job, apiKey) {
       if (!result) throw new Error("DeepSeek returned empty content");
       const unchanged = comparable(result) === comparable(job.sourceValue);
       const wrongDescriptionLanguage =
-        job.fieldName !== "name" &&
+        !isTitle(job.fieldName) &&
         (detectLanguage(result) === "en" || (job.locale === "cs" && detectLanguage(result) === "de"));
-      if ((unchanged && (job.fieldName !== "name" || hasTranslatableTitle(job.sourceValue))) || wrongDescriptionLanguage) {
+      if ((unchanged && (!isTitle(job.fieldName) || hasTranslatableTitle(job.sourceValue))) || wrongDescriptionLanguage) {
         previousResult = result;
         throw new Error("DeepSeek left translatable source-language wording unchanged");
       }
@@ -263,20 +265,23 @@ async function rollback(client, path) {
   const unsigned = { ...backup }; delete unsigned.checksum;
   if (backup.schema !== "kariv-product-translation-rollback" || backup.tenant?.id !== STORE_ID || createHash("sha256").update(JSON.stringify(unsigned)).digest("hex") !== backup.checksum) throw new Error("The rollback backup is invalid or has been changed.");
   const affected = new Set(backup.products.map((product) => product.id));
+  const affectedKeys = new Set(backup.affectedJobKeys);
   const originalKeys = new Set(backup.translations.map((row) => `${row.entity_id}:${row.locale}:${row.field_name}`));
-  for (let index = 0; index < backup.translations.length; index += 250) {
-    const { error } = await client.from("translations").upsert(backup.translations.slice(index, index + 250), { onConflict: "entity_type,entity_id,field_name,locale" });
+  const originals = backup.translations.filter((row) => affectedKeys.has(`${row.entity_id}:${row.locale}:${row.field_name}`));
+  for (let index = 0; index < originals.length; index += 250) {
+    const { error } = await client.from("translations").upsert(originals.slice(index, index + 250), { onConflict: "entity_type,entity_id,field_name,locale" });
     if (error) throw new Error(`Rollback upsert failed: ${error.message}`);
   }
   const current = affected.size === 0 ? [] : await fetchAll(() => client.from("translations").select("entity_id, locale, field_name").eq("store_id", STORE_ID).eq("entity_type", "product").in("entity_id", [...affected]).in("locale", [SOURCE_LOCALE, ...TARGET_LOCALES]).in("field_name", FIELDS));
   let removedNewRows = 0;
   for (const row of current) {
+    if (!affectedKeys.has(`${row.entity_id}:${row.locale}:${row.field_name}`)) continue;
     if (originalKeys.has(`${row.entity_id}:${row.locale}:${row.field_name}`)) continue;
     const { error } = await client.from("translations").delete().eq("store_id", STORE_ID).eq("entity_type", "product").eq("entity_id", row.entity_id).eq("locale", row.locale).eq("field_name", row.field_name);
     if (error) throw new Error(`Rollback cleanup failed: ${error.message}`);
     removedNewRows++;
   }
-  console.log(JSON.stringify({ mode: "rollback", restoredRows: backup.translations.length, removedNewRows }, null, 2));
+  console.log(JSON.stringify({ mode: "rollback", restoredRows: originals.length, removedNewRows }, null, 2));
 }
 
 function summarizeJobs(jobs) {
@@ -294,6 +299,19 @@ async function main() {
 
   const catalog = await loadCatalog(client);
   const plan = buildPlan(catalog);
+  const selectedIds = option("product-ids")?.split(",").map((id) => id.trim()).filter(Boolean);
+  const selectedLocale = option("locale");
+  const selectedFields = option("field")?.split(",").map((field) => field.trim());
+  if (selectedIds?.some((id) => !catalog.products.some((product) => product.id === id))) {
+    throw new Error("A selected product does not belong to Kariv.");
+  }
+  if (selectedLocale && !TARGET_LOCALES.includes(selectedLocale)) throw new Error("Unsupported repair locale.");
+  if (selectedFields?.some((field) => !FIELDS.includes(field))) throw new Error("Unsupported repair field.");
+  plan.jobs = plan.jobs.filter((job) =>
+    (!selectedIds || selectedIds.includes(job.productId)) &&
+    (!selectedLocale || job.locale === selectedLocale) &&
+    (!selectedFields || selectedFields.includes(job.fieldName))
+  );
   const report = {
     generatedAt: new Date().toISOString(), mode: flag("apply") ? "apply-plan" : "dry-run",
     tenant: { id: catalog.store.id, name: catalog.store.name, sourceLocale: SOURCE_LOCALE, targetLocales: TARGET_LOCALES },
