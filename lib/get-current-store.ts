@@ -13,19 +13,26 @@ export const getCurrentStore = cache(async (): Promise<Store> => {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const { data: membership, error: membershipError } = await supabaseAdmin
+  const { data: memberships, error: membershipError } = await supabaseAdmin
     .from("store_members")
-    .select("store_id, stores(*)")
-    .eq("user_id", userId)
-    .limit(1)
-    .maybeSingle();
+    .select("store_id, removed_at, stores(*)")
+    .eq("user_id", userId);
 
   if (membershipError) {
     throw new Error(`Failed to load store membership: ${membershipError.message}`);
   }
 
-  if (membership?.stores) {
-    return membership.stores as unknown as Store;
+  const activeMembership = (memberships ?? []).find((m) => !m.removed_at);
+  if (activeMembership?.stores) {
+    return activeMembership.stores as unknown as Store;
+  }
+
+  // Every row found (if any) was removed -- this person used to have
+  // access and had it revoked. Never fall through to auto-provisioning for
+  // them; that would silently hand them a brand-new store as its owner,
+  // undoing the removal entirely instead of respecting it.
+  if ((memberships ?? []).length > 0) {
+    redirect("/access-revoked");
   }
 
   const storeName = "My Store";

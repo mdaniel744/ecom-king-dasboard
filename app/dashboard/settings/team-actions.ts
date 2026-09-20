@@ -28,7 +28,8 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
   const { data: members, error } = await supabaseAdmin
     .from("store_members")
     .select("user_id, role")
-    .eq("store_id", store.id);
+    .eq("store_id", store.id)
+    .is("removed_at", null);
 
   if (error || !members?.length) return [];
 
@@ -106,20 +107,45 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
 
   const invitedUserId = clerkUsers[0].id;
 
-  const { data: existingMembership } = await supabaseAdmin
+  const { data: existingMemberships } = await supabaseAdmin
     .from("store_members")
-    .select("store_id")
-    .eq("user_id", invitedUserId)
-    .maybeSingle();
+    .select("id, store_id, removed_at")
+    .eq("user_id", invitedUserId);
 
-  if (existingMembership?.store_id === store.id) {
-    return { success: false, error: "This person is already a teammate on this store." };
-  }
-  if (existingMembership) {
+  const activeElsewhere = (existingMemberships ?? []).find(
+    (m) => !m.removed_at && m.store_id !== store.id
+  );
+  if (activeElsewhere) {
     return {
       success: false,
       error: "This person already belongs to a different store on this platform.",
     };
+  }
+
+  const activeHere = (existingMemberships ?? []).find(
+    (m) => !m.removed_at && m.store_id === store.id
+  );
+  if (activeHere) {
+    return { success: false, error: "This person is already a teammate on this store." };
+  }
+
+  // A removed row for this exact store: re-activate it instead of
+  // inserting -- the unique (store_id, user_id) constraint would reject a
+  // fresh insert while the old removed row still exists, and reusing it
+  // keeps a clean history of when they left and rejoined either way.
+  const removedHere = (existingMemberships ?? []).find(
+    (m) => m.removed_at && m.store_id === store.id
+  );
+  if (removedHere) {
+    const { error: reactivateError } = await supabaseAdmin
+      .from("store_members")
+      .update({ role, removed_at: null })
+      .eq("id", removedHere.id);
+    if (reactivateError) {
+      return { success: false, error: `Failed to add teammate: ${reactivateError.message}` };
+    }
+    revalidatePath("/dashboard/settings");
+    return { success: true };
   }
 
   const { error: insertError } = await supabaseAdmin
@@ -149,9 +175,14 @@ export async function removeTeammate(targetUserId: string): Promise<InviteResult
     return { success: false, error: "The store owner can't be removed." };
   }
 
+  // Soft-delete, not a real DELETE: getCurrentStore() needs to be able to
+  // tell "never had access" (auto-provision a store) apart from "had
+  // access, was removed" (block instead) -- a hard delete makes those two
+  // cases look identical and previously let a removed person sign back in
+  // and get handed a brand-new store as its owner.
   const { error } = await supabaseAdmin
     .from("store_members")
-    .delete()
+    .update({ removed_at: new Date().toISOString() })
     .eq("store_id", store.id)
     .eq("user_id", targetUserId);
 
