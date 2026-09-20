@@ -21,7 +21,7 @@ declare
   changed_fields jsonb := '[]'::jsonb;
 begin
   if new.store_id <> '7efd71bc-0287-4f40-8a2f-1de330c49522'::uuid
-     or new.dealer_user_id is null then
+     or coalesce(to_jsonb(new)->>'dealer_user_id', to_jsonb(new)->>'dealer_id') is null then
     return new;
   end if;
 
@@ -38,6 +38,11 @@ begin
     if new.name is distinct from old.name then changed_fields := changed_fields || jsonb_build_array('name'); end if;
     if new.short_description is distinct from old.short_description then changed_fields := changed_fields || jsonb_build_array('short_description'); end if;
     if new.description is distinct from old.description then changed_fields := changed_fields || jsonb_build_array('description'); end if;
+    if new.meta_title is distinct from old.meta_title then changed_fields := changed_fields || jsonb_build_array('meta_title'); end if;
+    if new.meta_description is distinct from old.meta_description then changed_fields := changed_fields || jsonb_build_array('meta_description'); end if;
+    if new.badge is distinct from old.badge then changed_fields := changed_fields || jsonb_build_array('badge'); end if;
+    if new.google_title is distinct from old.google_title then changed_fields := changed_fields || jsonb_build_array('google_title'); end if;
+    if new.google_description is distinct from old.google_description then changed_fields := changed_fields || jsonb_build_array('google_description'); end if;
     if jsonb_array_length(changed_fields) = 0 then return new; end if;
   end if;
 
@@ -57,5 +62,5 @@ $$;
 
 drop trigger if exists kariv_dealer_product_translation on public.products;
 create trigger kariv_dealer_product_translation
-after insert or update of name, short_description, description on public.products
+after insert or update of name, short_description, description, meta_title, meta_description, badge, google_title, google_description on public.products
 for each row execute function public.notify_kariv_product_translation();

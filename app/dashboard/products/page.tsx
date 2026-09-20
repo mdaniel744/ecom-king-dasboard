@@ -7,8 +7,20 @@ import { AddProductMenu } from "@/app/dashboard/products/add-product-menu";
 import { ProductTransferMenu } from "@/app/dashboard/products/product-transfer-menu";
 import { AllProductsTable, type CatalogEntry } from "@/app/dashboard/products/all-products-table";
 import { checkStoreMerchantConfig } from "@/lib/merchant-rules";
+import {
+  parseProductPage,
+  parseProductPageSize,
+  type ProductListQueryValue,
+} from "@/lib/product-list-pagination";
 
-export default async function ProductsPage() {
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, ProductListQueryValue>>;
+}) {
+  const query = await searchParams;
+  const initialPage = parseProductPage(query.page);
+  const initialPageSize = parseProductPageSize(query.pageSize);
   const store = await getCurrentStore();
   const [{ data: products }, { data: families }] = await Promise.all([
     supabaseAdmin
@@ -79,7 +91,12 @@ export default async function ProductsPage() {
         <StoreReadinessBanner issues={storeIssues} />
       </div>
 
-      <AllProductsTable entries={entries} store={store} />
+      <AllProductsTable
+        entries={entries}
+        store={store}
+        initialPage={initialPage}
+        initialPageSize={initialPageSize}
+      />
     </div>
   );
 }

@@ -15,6 +15,8 @@ import { getPrimaryStoreCurrency, getStoreMarketPricing } from "@/lib/merchant-l
 import { configuredProductContentLocales } from "@/lib/product-content-language";
 import type { Brand, Category, Collection, Product, ProductFamily } from "@/lib/types";
 
+export const maxDuration = 300;
+
 function formatPrice(product: Product) {
   if (product.price == null) return "Price not set";
   try {

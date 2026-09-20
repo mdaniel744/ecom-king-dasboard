@@ -101,6 +101,8 @@ function parseProductMedia(formData: FormData) {
 async function buildProductPayload(formData: FormData, storeId: string) {
   const name = (formData.get("name") as string)?.trim() ?? "";
   const rawSlug = (formData.get("slug") as string)?.trim();
+  const referenceNumber = (formData.get("reference_number") as string)?.trim() || null;
+  const explicitMpn = (formData.get("mpn") as string)?.trim() || null;
   const priceRaw = formData.get("price") as string;
   const salePriceRaw = formData.get("sale_price") as string;
   const categoryId = formData.get("category_id") as string;
@@ -128,7 +130,7 @@ async function buildProductPayload(formData: FormData, storeId: string) {
     status: (formData.get("status") as ProductStatus) || "draft",
     condition: (formData.get("condition") as ProductCondition) || "new",
     brand: (formData.get("brand") as string) || null,
-    mpn: (formData.get("mpn") as string) || null,
+    mpn: explicitMpn || referenceNumber,
     google_product_category: (formData.get("google_product_category") as string) || null,
     google_title: (formData.get("google_title") as string)?.trim() || null,
     google_description: (formData.get("google_description") as string)?.trim() || null,
@@ -138,7 +140,7 @@ async function buildProductPayload(formData: FormData, storeId: string) {
     brand_id: brandId,
     collection_id: collectionId,
     family_id: familyId,
-    reference_number: (formData.get("reference_number") as string)?.trim() || null,
+    reference_number: referenceNumber,
     images: media.map((item) => item.url),
     image_titles: media.map((item) => item.title),
     image_alts: media.map((item) => item.alt),
@@ -207,7 +209,7 @@ export async function updateProduct(productId: string, formData: FormData): Prom
     const payload = { ...rawPayload, ...prepared.primary };
     const { data: existingProduct } = await supabaseAdmin
       .from("products")
-      .select("family_id, name, short_description, description")
+      .select("family_id, name, short_description, description, meta_title, meta_description, badge, google_title, google_description")
       .eq("id", productId)
       .eq("store_id", store.id)
       .maybeSingle();
@@ -228,7 +230,10 @@ export async function updateProduct(productId: string, formData: FormData): Prom
         ? changedProductContentFields(existingProduct, prepared.primary)
         : [];
     after(async () => {
-      await syncProductTranslations(store, product as Product, { sourceChangedFields });
+      await syncProductTranslations(store, product as Product, {
+        onlyMissing: prepared.actualLocale === store.google_content_language,
+        sourceChangedFields,
+      });
     });
     revalidatePath("/dashboard/products");
     revalidatePath("/dashboard/product-families");

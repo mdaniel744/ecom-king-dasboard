@@ -1,5 +1,6 @@
 import type { Product, Store } from "@/lib/types";
 import { stripHtml } from "@/lib/html";
+import { resolveProductMpn } from "@/lib/product-identifiers";
 
 export type RuleSeverity = "error" | "warning";
 
@@ -93,6 +94,7 @@ export function checkStoreMerchantConfig(store: Store): RuleIssue[] {
  */
 export function checkProductForMerchant(product: Product, store: Store): RuleIssue[] {
   const storeIssues = checkStoreMerchantConfig(store);
+  const effectiveMpn = resolveProductMpn(product);
 
   if (product.status !== "active") {
     return [
@@ -222,7 +224,7 @@ export function checkProductForMerchant(product: Product, store: Store): RuleIss
         severity: "error",
       });
     }
-  } else if (!(product.brand && product.mpn)) {
+  } else if (!(product.brand && effectiveMpn)) {
     issues.push({
       field: "gtin",
       code: "no_identifier",

@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isUntranslatedCopy } from "@/lib/translation-quality";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 
@@ -86,6 +87,7 @@ async function callDeepSeek(systemPrompt: string, text: string, apiKey: string):
       ],
       temperature: 0.3,
     }),
+    signal: AbortSignal.timeout(45_000),
   });
 
   if (!res.ok) {
@@ -140,6 +142,8 @@ export async function translateText({
     `This text is a "${fieldRole}" on an online store product/category page.`,
     categoryPath ? `It belongs to the category "${categoryPath}" — use terminology appropriate to that industry.` : null,
     `Keep tone and length appropriate for e-commerce. Preserve any numbers, units, and proper nouns exactly.`,
+    `Preserve brand and official model names, but translate all surrounding descriptive words, including materials, colors, condition, dial, strap, box and papers. Do not treat an entire product or SEO title as a proper noun.`,
+    `Translate short descriptions, SEO titles and SEO descriptions completely; do not repeat the source text or introduce new claims.`,
     glossaryInstructions,
     isHtml
       ? `This text contains HTML markup. Preserve every HTML tag, attribute, and the exact tag structure unchanged — do not add, remove, reorder, or alter any tag. Translate ONLY the human-readable text between tags. Return ONLY the resulting HTML — no markdown code fences, no explanation, no original text.`
@@ -148,10 +152,18 @@ export async function translateText({
     .filter(Boolean)
     .join(" ");
 
-  try {
-    return await callDeepSeek(systemPrompt, text, apiKey);
-  } catch {
-    await sleep(500);
-    return await callDeepSeek(systemPrompt, text, apiKey);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const translated = await callDeepSeek(systemPrompt + (attempt ? " A previous attempt failed. Ensure all ordinary descriptive wording is translated into the target language." : ""), text, apiKey);
+      if (isUntranslatedCopy(text, translated, sourceLocale, targetLocale, fieldRole)) {
+        throw new TranslationError("The translation still contains unchanged source-language copy.");
+      }
+      return translated;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await sleep(500);
+    }
   }
+  throw lastError;
 }

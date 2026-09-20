@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldError } from "@/components/dashboard/field-error";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
 import { AIWriteButton } from "@/components/dashboard/ai-write-button";
+import { GmcPolicyCheck } from "@/components/dashboard/gmc-policy-check";
 import { TranslationEditor } from "@/components/dashboard/translation-editor";
 import { RichTextEditor } from "@/components/dashboard/rich-text-editor";
 import { FieldInfo } from "@/components/ui/field-info";
@@ -29,6 +30,7 @@ import type {
   Category,
   Collection,
   Product,
+  ProductCondition,
   ProductFamily,
 } from "@/lib/types";
 import type { AttributeDef } from "@/lib/attribute-defs";
@@ -39,6 +41,7 @@ import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import { FamilyDialog } from "@/app/dashboard/product-families/family-dialog";
 import { suggestGoogleCategory } from "./suggest-category-action";
 import { generateMpn } from "./generate-mpn-action";
+import { productDescriptionTextToHtml } from "@/lib/product-description-format";
 import { ProductMediaManager } from "./product-media-manager";
 import { AttributePresetPicker } from "./attribute-preset-picker";
 import { previewMarketPrices, type MarketPricePreview } from "./actions";
@@ -116,12 +119,21 @@ export function ProductForm({
   const [brand, setBrand] = useState(product?.brand ?? "");
   const [selectedBrandId, setSelectedBrandId] = useState(product?.brand_id ?? "");
   const [selectedCollectionId, setSelectedCollectionId] = useState(product?.collection_id ?? "");
-  const [mpn, setMpn] = useState(product?.mpn ?? "");
+  const [referenceNumber, setReferenceNumber] = useState(product?.reference_number ?? "");
+  const [mpn, setMpn] = useState(product?.mpn ?? product?.reference_number ?? "");
   const [isGeneratingMpn, setIsGeneratingMpn] = useState(false);
   const [googleProductCategory, setGoogleProductCategory] = useState(product?.google_product_category ?? "");
   const [googleTitle, setGoogleTitle] = useState(product?.google_title ?? "");
   const [googleDescription, setGoogleDescription] = useState(product?.google_description ?? "");
   const [isSuggestingCategory, setIsSuggestingCategory] = useState(false);
+  const [condition, setCondition] = useState<ProductCondition>(product?.condition ?? "new");
+
+  function handleReferenceNumberChange(nextReferenceNumber: string) {
+    setMpn((currentMpn) =>
+      !currentMpn.trim() || currentMpn === referenceNumber ? nextReferenceNumber : currentMpn
+    );
+    setReferenceNumber(nextReferenceNumber);
+  }
 
   const [selectedCategoryId, setSelectedCategoryId] = useState(product?.category_id ?? "");
 
@@ -185,6 +197,37 @@ export function ProductForm({
     initialAttrs.length ? initialAttrs : [["", ""]]
   );
 
+  function productDescriptionAiSource(preferredDescription?: string): string {
+    const categoryName = categories.find((item) => item.id === selectedCategoryId)?.name;
+    const selectedBrand = brands.find((item) => item.id === selectedBrandId)?.name || brand;
+    const collectionName = collections.find((item) => item.id === selectedCollectionId)?.name;
+    const currentDescription = stripHtml(preferredDescription?.trim() || description).trim();
+    const suppliedAttributes = attrs
+      .filter(([key, value]) => key.trim() && value.trim())
+      .map(([key, value]) => `${key.trim()}: ${value.trim()}`);
+    const hasIdentifyingFacts = Boolean(
+      name.trim() ||
+        selectedBrand?.trim() ||
+        collectionName?.trim() ||
+        categoryName?.trim() ||
+        suppliedAttributes.length > 0 ||
+        currentDescription
+    );
+    if (!hasIdentifyingFacts) return "";
+
+    const facts = [
+      name.trim() ? `Product title: ${name.trim()}` : "",
+      selectedBrand?.trim() ? `Brand: ${selectedBrand.trim()}` : "",
+      collectionName?.trim() ? `Collection: ${collectionName.trim()}` : "",
+      categoryName?.trim() ? `Category: ${categoryName.trim()}` : "",
+      `Condition: ${condition}`,
+      ...suppliedAttributes,
+      currentDescription ? `Existing factual description: ${currentDescription}` : "",
+    ].filter(Boolean);
+
+    return facts.join("\n").slice(0, 5000);
+  }
+
   function handleSubmit(formData: FormData) {
     setError(null);
     setFieldErrors({});
@@ -229,20 +272,6 @@ export function ProductForm({
         toast.error(result.error);
       }
     });
-  }
-
-  // AI Write returns plain text; the description field is rich-text HTML,
-  // so wrap each paragraph in <p> (escaping first) rather than dropping raw
-  // plain text into the editor as one unbroken line.
-  function plainTextToParagraphHtml(text: string): string {
-    const escape = (s: string) =>
-      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return text
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .map((p) => `<p>${escape(p)}</p>`)
-      .join("");
   }
 
   function updateAttr(index: number, field: 0 | 1, newValue: string) {
@@ -507,12 +536,12 @@ export function ProductForm({
                     <Label htmlFor="description">Description <span className="text-xs font-normal text-muted-foreground">(recommended for Google)</span></Label>
                     <FieldInfo
                       title="Product Description"
-                      description="The full product description shown on the product detail page and sent to Google Shopping. Be detailed and accurate — include materials, dimensions, certifications, and use cases. Google uses this to match your product to search queries. Minimum 20 characters for Google approval."
+                      description="AI Write develops two paragraphs about the product's purpose, design, and practical use, followed by a short technical summary. Add accurate attributes to give the writer more useful detail."
                     />
                   </div>
                   <AIWriteButton
-                    getValue={() => stripHtml(description)}
-                    onResult={(text) => setDescription(plainTextToParagraphHtml(text))}
+                    getValue={() => productDescriptionAiSource()}
+                    onResult={(text) => setDescription(productDescriptionTextToHtml(text))}
                     fieldRole="description"
                     targetLocale={contentLanguage}
                     sourceLocale="auto"
@@ -521,6 +550,7 @@ export function ProductForm({
                 </div>
                 <input type="hidden" name="description" value={description} />
                 <RichTextEditor value={description} onChange={setDescription} placeholder="Full product description..." />
+                <GmcPolicyCheck value={description} onAutoFix={setDescription} />
                 <FieldError name="description" errors={fieldErrors} />
               </div>
             </CardContent>
@@ -738,7 +768,11 @@ export function ProductForm({
                     description="Required by Google Shopping. New: brand new, unused, in original packaging. Used: previously owned or used. Refurbished: professionally restored to working order. Must accurately describe the actual product — Google may disapprove if the condition doesn't match the listing."
                   />
                 </div>
-                <Select name="condition" defaultValue={product?.condition ?? "new"}>
+                <Select
+                  name="condition"
+                  value={condition}
+                  onValueChange={(value) => setCondition(value as ProductCondition)}
+                >
                   <SelectTrigger id="condition">
                     <SelectValue />
                   </SelectTrigger>
@@ -919,11 +953,19 @@ export function ProductForm({
                   <Label htmlFor="reference_number">Reference Number <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                   <FieldInfo
                     title="Reference Number"
-                    description="The manufacturer's own public reference/model number for this exact item (e.g. a watch reference number) — shown to customers and searchable, unlike SKU which is internal-only. Leave blank if your niche doesn't use these."
+                    description="The manufacturer's own public reference/model number for this exact item (e.g. a watch reference number). When provided, it is automatically used as the Google Merchant MPN unless you enter a different MPN."
                   />
                 </div>
-                <Input id="reference_number" name="reference_number" defaultValue={product?.reference_number ?? ""} />
+                <Input
+                  id="reference_number"
+                  name="reference_number"
+                  value={referenceNumber}
+                  onChange={(event) => handleReferenceNumberChange(event.target.value)}
+                />
                 <FieldError name="reference_number" errors={fieldErrors} />
+                <p className="text-xs text-muted-foreground">
+                  Automatically used as the Google Merchant MPN unless you enter a different MPN.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -968,7 +1010,7 @@ export function ProductForm({
                     <Label htmlFor="mpn">MPN <span className="text-xs font-normal text-muted-foreground">(optional, recommended for Google)</span></Label>
                     <FieldInfo
                       title="MPN (Manufacturer Part Number)"
-                      description="A unique code identifying this exact product model — no fixed length, typically a few characters up to 70 (letters, numbers, hyphens). Google pairs Brand + MPN to match your listing to the same product sold by other sellers, grouping them in Shopping so buyers can compare price and seller. Use Generate to auto-create one — AI-generated with a unique suffix so it never clashes with another product. You can edit it at any time, but always keep it unique across your products. Needs Brand filled in too to count as a valid identifier with Google."
+                      description="A unique code identifying this exact product model. The product Reference Number is copied here automatically when available. You may enter a different MPN or generate one; an explicit MPN takes priority. Google requires Brand together with MPN when no GTIN is available."
                     />
                   </div>
                   <Button
@@ -988,11 +1030,14 @@ export function ProductForm({
                   name="mpn"
                   value={mpn}
                   onChange={(e) => setMpn(e.target.value)}
-                  placeholder="Auto-generate or enter manually"
+                  onBlur={() => {
+                    if (!mpn.trim() && referenceNumber.trim()) setMpn(referenceNumber.trim());
+                  }}
+                  placeholder="Uses Reference Number automatically"
                 />
                 <FieldError name="mpn" errors={fieldErrors} />
                 <p className="text-xs text-muted-foreground">
-                  Needs Brand filled in too to count as a valid identifier with Google.
+                  Reference Number is used automatically. Brand is also needed for a valid Brand + MPN identifier.
                 </p>
               </div>
 
@@ -1070,7 +1115,7 @@ export function ProductForm({
                     />
                   </div>
                   <AIWriteButton
-                    getValue={() => googleDescription || stripHtml(description) || shortDescription}
+                    getValue={() => productDescriptionAiSource(googleDescription)}
                     onResult={(value) => setGoogleDescription(value.slice(0, 5000))}
                     fieldRole="google_description"
                     targetLocale={contentLanguage}
@@ -1081,11 +1126,15 @@ export function ProductForm({
                 <Textarea
                   id="google_description"
                   name="google_description"
-                  rows={3}
+                  rows={9}
                   maxLength={5000}
                   value={googleDescription}
                   onChange={(event) => setGoogleDescription(event.target.value)}
                   placeholder="Leave blank to use Description automatically"
+                />
+                <GmcPolicyCheck
+                  value={googleDescription}
+                  onAutoFix={(cleanedText) => setGoogleDescription(cleanedText.slice(0, 5000))}
                 />
                 <FieldError name="google_description" errors={fieldErrors} />
               </div>
@@ -1212,13 +1261,17 @@ export function ProductForm({
         <TranslationEditor
           entityType="product"
           entityId={product?.id}
-          enabledLocales={enabledLocales}
+          enabledLocales={enabledLocales.filter((locale) => locale !== storeSourceLocale)}
+          sourceValues={{ name, short_description: shortDescription, description,
+            meta_title: metaTitle, meta_description: metaDescription }}
+          savedSourceValues={{ name: product?.name, short_description: product?.short_description,
+            description: product?.description, meta_title: product?.meta_title, meta_description: product?.meta_description }}
           fields={[
             { name: "name", label: "Title" },
-            { name: "short_description", label: "Short Description" },
+            { name: "short_description", label: "Short Description", multiline: true, sourceLabel: "Original product details" },
             { name: "description", label: "Description", multiline: true },
-            { name: "meta_title", label: "SEO Meta Title" },
-            { name: "meta_description", label: "SEO Meta Description", multiline: true },
+            { name: "meta_title", label: "SEO Meta Title", sourceLabel: "Search Engine Listing" },
+            { name: "meta_description", label: "SEO Meta Description", multiline: true, sourceLabel: "Search Engine Listing" },
           ]}
         />
       </div>

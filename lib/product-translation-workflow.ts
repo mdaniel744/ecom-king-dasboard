@@ -146,7 +146,8 @@ export async function syncProductTranslations(
     entityId: product.id,
     categoryPath,
     htmlFields: ["description"],
-    onlyMissing: options?.onlyMissing,
+    // Fill gaps on every save; only changed AI fields need regeneration.
+    onlyMissing: options?.onlyMissing ?? true,
     sourceChangedFields: options?.sourceChangedFields,
     fields: productContentValues(product),
   });

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CONTENT_LANGUAGE_OPTIONS } from "@/lib/merchant-locales";
+import { translationSourceState, type TranslationSourceValues } from "@/lib/translation-source";
 import {
   getEntityTranslations,
   saveManualTranslation,
@@ -22,6 +23,7 @@ type FieldDef = {
   name: string;
   label: string;
   multiline?: boolean;
+  sourceLabel?: string;
 };
 
 type Props = {
@@ -29,6 +31,8 @@ type Props = {
   entityId?: string;
   enabledLocales: string[];
   fields: FieldDef[];
+  sourceValues?: TranslationSourceValues;
+  savedSourceValues?: TranslationSourceValues;
 };
 
 type TranslationsByLocale = Record<
@@ -40,24 +44,46 @@ function localeLabel(code: string): string {
   return CONTENT_LANGUAGE_OPTIONS.find((o) => o.value === code)?.label ?? code;
 }
 
-export function TranslationEditor({ entityType, entityId, enabledLocales, fields }: Props) {
+export function TranslationEditor({ entityType, entityId, enabledLocales, fields, sourceValues, savedSourceValues }: Props) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<TranslationsByLocale>({});
   const [activeLocale, setActiveLocale] = useState(enabledLocales[0] ?? "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingField, setSavingField] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const hasUnsavedSource = Boolean(sourceValues && fields.some((field) =>
+    translationSourceState(field.name, sourceValues, savedSourceValues) === "unsaved"));
+  // Stable dependency even when the form constructs props inline.
+  const expectedKeys = JSON.stringify(enabledLocales.flatMap((locale) => fields
+    .filter((field) => sourceValues === undefined || (savedSourceValues ?? sourceValues)[field.name]?.trim())
+    .map((field) => [locale, field.name])));
 
   useEffect(() => {
     if (!entityId || enabledLocales.length === 0) {
       setLoading(false);
       return;
     }
-    getEntityTranslations(entityType, entityId).then((result) => {
-      setData(result);
-      setLoading(false);
-    });
-  }, [entityType, entityId, enabledLocales.length]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const required = JSON.parse(expectedKeys) as [string, string][];
+    async function refresh() {
+      try {
+        const result = await getEntityTranslations(entityType, entityId!);
+        if (cancelled) return;
+        setData(result);
+        if (entityType === "product" && ++attempts < 20 && required.some(([locale, field]) => !result[locale]?.[field]?.value.trim())) {
+          timer = setTimeout(refresh, 3000);
+        }
+      } catch {
+        if (!cancelled) toast.error("Could not load translations. Please refresh and try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void refresh();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [entityType, entityId, enabledLocales.length, expectedKeys]);
 
   if (enabledLocales.length === 0) return null;
 
@@ -93,7 +119,7 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
   }
 
   function hasTranslation(locale: string, field: string): boolean {
-    return Boolean(data[locale]?.[field]);
+    return Boolean(data[locale]?.[field]?.value.trim());
   }
 
   async function handleSave(locale: string, field: string) {
@@ -155,21 +181,30 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
 
   async function handleRetry() {
     if (!entityId || entityType !== "product") return;
-    setRetrying(true);
-    const result = await retryProductTranslations(entityId);
-    setRetrying(false);
-    if (!result.success) {
-      toast.error(result.error);
+    if (hasUnsavedSource) {
+      toast.info("Save the product first to translate your updated source text.");
       return;
     }
-    const refreshed = await getEntityTranslations(entityType, entityId);
-    setData(refreshed);
-    if (result.data.failed > 0) {
-      toast.error(`${result.data.failed} translation field(s) still failed. Check the translation service and retry.`);
-    } else if (result.data.succeeded > 0) {
-      toast.success(`${result.data.succeeded} translation field(s) completed.`);
-    } else {
-      toast.success("Translations are already complete or protected by human edits.");
+    setRetrying(true);
+    try {
+      const result = await retryProductTranslations(entityId);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      const refreshed = await getEntityTranslations(entityType, entityId);
+      setData(refreshed);
+      if (result.data.failed > 0) {
+        toast.error(`${result.data.failed} translation field(s) still failed. Check the translation service and retry.`);
+      } else if (result.data.succeeded > 0) {
+        toast.success(`${result.data.succeeded} translation field(s) completed.`);
+      } else {
+        toast.success("Translations are already complete or protected by human edits.");
+      }
+    } catch {
+      toast.error("Could not refresh translations. Please try again.");
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -179,7 +214,7 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">Translations</CardTitle>
           {entityType === "product" && (
-            <Button type="button" variant="outline" size="sm" onClick={handleRetry} disabled={retrying}>
+            <Button type="button" variant="outline" size="sm" onClick={handleRetry} disabled={retrying || hasUnsavedSource}>
               {retrying ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
               {retrying ? "Retrying…" : "Retry missing"}
             </Button>
@@ -189,6 +224,11 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
           Auto-translated on save. Fix anything wrong here — once you save a correction, AI won&apos;t
           touch that field/language again.
         </p>
+        {hasUnsavedSource && (
+          <p className="text-xs text-amber-700 dark:text-amber-400" role="status">
+            Source text changed. Save the product to translate it automatically; existing translations still reflect the last save.
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-1.5">
@@ -220,6 +260,7 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
               const human = isHuman(activeLocale, field.name);
               const exists = hasTranslation(activeLocale, field.name);
               const needsReview = Boolean(data[activeLocale]?.[field.name]?.needsReview);
+              const sourceState = sourceValues ? translationSourceState(field.name, sourceValues, savedSourceValues) : undefined;
               const InputComponent = field.multiline ? Textarea : Input;
               return (
                 <div key={field.name} className="space-y-1.5">
@@ -237,7 +278,11 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
                       )
                     ) : (
                       <span className="text-[10px] text-muted-foreground">
-                        Not translated yet — showing source text on the storefront
+                        {sourceState === "unsaved"
+                          ? "Save product to translate"
+                          : sourceState === "empty"
+                          ? "No source text — add it and save to translate"
+                          : "Translation pending — refreshes automatically"}
                       </span>
                     )}
                     {needsReview && (
@@ -246,6 +291,12 @@ export function TranslationEditor({ entityType, entityId, enabledLocales, fields
                       </Badge>
                     )}
                   </div>
+                  {field.sourceLabel && sourceValues && (
+                    <details className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">Source: {field.sourceLabel}{sourceState === "unsaved" ? " (unsaved)" : ""}</summary>
+                      <p className="mt-2 whitespace-pre-wrap break-words">{sourceValues[field.name]?.trim() || "No source text provided."}</p>
+                    </details>
+                  )}
                   <InputComponent
                     value={getValue(activeLocale, field.name)}
                     onChange={(e) =>
