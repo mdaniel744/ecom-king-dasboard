@@ -73,11 +73,25 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
   const client = await clerkClient();
   const { data: clerkUsers } = await client.users.getUserList({ emailAddress: [email] });
 
+  // No existing account: send a real Clerk invitation instead of requiring
+  // the owner to create the account by hand first. The role/store go on the
+  // invitation's publicMetadata -- Clerk copies that onto the resulting
+  // User the moment they accept and sign up, which is what the
+  // user.created webhook (app/api/clerk/user-created/route.ts) reads to
+  // actually create the store_members row. Nothing is added to this store
+  // until that webhook fires; there is no membership to create yet here.
   if (!clerkUsers.length) {
-    return {
-      success: false,
-      error: "No Clerk account found for that email. Create their account in the Clerk dashboard first, then invite.",
-    };
+    try {
+      await client.invitations.createInvitation({
+        emailAddress: email,
+        publicMetadata: { pendingStoreInvite: { storeId: store.id, role } },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not send the invitation.";
+      return { success: false, error: message };
+    }
+    revalidatePath("/dashboard/settings");
+    return { success: true };
   }
 
   const invitedUserId = clerkUsers[0].id;

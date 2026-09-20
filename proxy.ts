@@ -13,6 +13,7 @@ const publicRoutes = [
   "/api/inquiries/notify",
   "/api/orders/invoice",
   "/api/submissions/notify",
+  "/api/clerk/user-created",
   "/api/products/translate",
   ...(process.env.LOCAL_DEMO_MODE === "true"
     ? ["/dashboard(.*)", "/api/products/export", "/api/products/import"]
