@@ -98,7 +98,7 @@ export function TeamSection({
                 name="email"
                 type="email"
                 required
-                placeholder="they must already have a Clerk account"
+                placeholder="teammate@example.com"
               />
             </div>
             <div className="w-32 space-y-1.5">

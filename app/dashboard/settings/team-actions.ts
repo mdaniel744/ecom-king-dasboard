@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { isClerkAPIResponseError } from "@clerk/backend/errors";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { validate, validateClerkId } from "@/lib/validation";
@@ -87,7 +88,16 @@ export async function inviteTeammate(formData: FormData): Promise<InviteResult> 
         publicMetadata: { pendingStoreInvite: { storeId: store.id, role } },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not send the invitation.";
+      // Clerk's own message on these is often just the bare HTTP status
+      // text (e.g. "Bad Request") -- the actual reason lives in err.errors,
+      // which a plain err.message read silently drops.
+      console.error("Clerk invitation creation failed:", err);
+      let message = "Could not send the invitation.";
+      if (isClerkAPIResponseError(err)) {
+        message = err.errors[0]?.longMessage || err.errors[0]?.message || err.message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
       return { success: false, error: message };
     }
     revalidatePath("/dashboard/settings");
