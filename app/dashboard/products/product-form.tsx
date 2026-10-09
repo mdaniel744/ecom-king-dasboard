@@ -49,6 +49,8 @@ import { stripHtml } from "@/lib/html";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { detectEnglishOrGerman } from "@/lib/product-content-language";
+import { updateMerchantApparel } from "@/lib/merchant-apparel";
+import { MerchantApparelFields } from "./merchant-apparel-fields";
 
 type Props = {
   action: (formData: FormData) => Promise<ActionResult>;
@@ -979,7 +981,7 @@ export function ProductForm({
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">Google Merchant</span>
                   <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Product data is used automatically · open for identifiers and optional overrides
+                    Product data is used automatically · open for apparel, identifiers and overrides
                   </span>
                 </span>
                 <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -989,9 +991,14 @@ export function ProductForm({
                 <div className="rounded-lg border border-primary/15 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
                   Google Merchant automatically receives this product&apos;s title, description, price,
                   currency, images, availability, condition, Brand, Category, and family grouping.
-                  Use the fields below only for identifiers, taxonomy suggestions, or a deliberate
-                  Google-specific title or description.
+                  Add apparel details, identifiers, taxonomy suggestions, or a deliberate
+                  Google-specific title or description below.
                 </div>
+                <MerchantApparelFields
+                  attributes={attrs}
+                  onChange={(field, value) => setAttrs((current) => updateMerchantApparel(current, field, value))}
+                  errors={fieldErrors}
+                />
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="brand">Brand <span className="text-xs font-normal text-muted-foreground">(optional, recommended for Google)</span></Label>

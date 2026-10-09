@@ -1,6 +1,7 @@
 import type { Product, Store } from "@/lib/types";
 import { stripHtml } from "@/lib/html";
 import { resolveProductMpn } from "@/lib/product-identifiers";
+import { merchantApparelIssues } from "@/lib/merchant-apparel";
 
 export type RuleSeverity = "error" | "warning";
 
@@ -112,6 +113,9 @@ export function checkProductForMerchant(product: Product, store: Store): RuleIss
   }
 
   const issues: RuleIssue[] = [...storeIssues];
+  for (const issue of merchantApparelIssues(product.attributes)) {
+    issues.push({ field: `google_${issue.field}`, code: `invalid_apparel_${issue.field}`, message: issue.message, severity: "error" });
+  }
 
   if (!product.name?.trim()) {
     issues.push({

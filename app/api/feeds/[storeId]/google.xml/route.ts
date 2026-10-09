@@ -4,6 +4,7 @@ import { createMarketPriceConverter } from "@/lib/market-pricing";
 import type { Product, Store } from "@/lib/types";
 import { resolveProductMpn } from "@/lib/product-identifiers";
 import { loadMerchantTranslationRows, MerchantTranslationError } from "@/lib/merchant-translations";
+import { merchantApparelXml } from "@/lib/merchant-apparel";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -174,6 +175,7 @@ async function generateFeed(request: Request, storeId: string) {
     ${p.gtin ? `<g:gtin>${escapeXml(p.gtin)}</g:gtin>` : ""}
     ${effectiveMpn ? `<g:mpn>${escapeXml(effectiveMpn)}</g:mpn>` : "<g:mpn/>"}
     ${p.brand ? `<g:brand>${escapeXml(p.brand)}</g:brand>` : ""}
+    ${merchantApparelXml(p.attributes)}
     <g:canonical_link>${escapeXml(link)}</g:canonical_link>
     ${additionalImages.map((img: string) => `<g:additional_image_link>${escapeXml(img)}</g:additional_image_link>`).join("\n    ")}
     <g:identifier_exists>${hasIdentifier ? "yes" : "no"}</g:identifier_exists>

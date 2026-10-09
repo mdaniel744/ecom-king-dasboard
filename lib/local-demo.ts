@@ -794,6 +794,11 @@ class LocalDemoQuery implements PromiseLike<DemoResult> {
     return this;
   }
 
+  is(column: string, value: null | boolean) {
+    this.filters.push((row) => (row[column] ?? null) === value);
+    return this;
+  }
+
   in(column: string, values: unknown[]) {
     this.filters.push((row) => values.includes(row[column]));
     return this;

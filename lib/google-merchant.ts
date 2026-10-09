@@ -7,6 +7,7 @@ import { stripHtml } from "@/lib/html";
 import { convertPriceForMarket } from "@/lib/market-pricing";
 import { defaultLocaleForMarket } from "@/lib/merchant-locales";
 import { resolveProductMpn } from "@/lib/product-identifiers";
+import { merchantApparelApiAttributes } from "@/lib/merchant-apparel";
 import {
   loadMerchantTranslationRows,
   MERCHANT_TRANSLATION_FIELDS,
@@ -359,6 +360,7 @@ async function buildProductInput(
       mpn: effectiveMpn ?? undefined,
       googleProductCategory: product.google_product_category ?? undefined,
       productTypes: productType ? [productType] : undefined,
+      ...merchantApparelApiAttributes(product.attributes),
       // Per Google's spec: explicitly declare no identifier rather than
       // silently omitting gtin/brand/mpn, which otherwise risks disapproval
       // for "missing identifier" on products that legitimately have none.

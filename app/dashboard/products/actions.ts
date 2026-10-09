@@ -12,7 +12,8 @@ import {
   GoogleMerchantValidationError,
 } from "@/lib/google-merchant";
 import { checkProductForMerchant, hasBlockingIssues } from "@/lib/merchant-rules";
-import { validate, validateId } from "@/lib/validation";
+import { validate, validateId, ValidationError } from "@/lib/validation";
+import { merchantApparelIssues, updateMerchantApparel, type MerchantApparelField } from "@/lib/merchant-apparel";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { convertPriceForMarket, CurrencyConversionError } from "@/lib/market-pricing";
 import { getStoreMarketPricing } from "@/lib/merchant-locales";
@@ -110,6 +111,20 @@ async function buildProductPayload(formData: FormData, storeId: string) {
   const collectionId = (formData.get("collection_id") as string) || null;
   const familyId = (formData.get("family_id") as string) || null;
   const media = parseProductMedia(formData);
+  let attributeEntries = Object.entries(parseAttributes(formData));
+  for (const field of ["color", "gender", "age_group", "material"] as MerchantApparelField[]) {
+    const inputName = `google_${field}`;
+    if (!formData.has(inputName)) continue;
+    const value = String(formData.get(inputName) ?? "").trim();
+    attributeEntries = updateMerchantApparel(attributeEntries, field, (field === "gender" || field === "age_group") && value === "none" ? "" : value);
+  }
+  const attributes = Object.fromEntries(attributeEntries);
+  const apparelIssues = merchantApparelIssues(attributes);
+  if (apparelIssues.length) {
+    throw new ValidationError("Review the Google Merchant apparel details.", Object.fromEntries(
+      apparelIssues.map((issue) => [`google_${issue.field}`, issue.message])
+    ));
+  }
 
   await assertOwnedByStore("brands", brandId, storeId);
   await assertOwnedByStore("collections", collectionId, storeId);
@@ -145,7 +160,7 @@ async function buildProductPayload(formData: FormData, storeId: string) {
     image_titles: media.map((item) => item.title),
     image_alts: media.map((item) => item.alt),
     image_descriptions: media.map((item) => item.description),
-    attributes: parseAttributes(formData),
+    attributes,
   });
 }
 
