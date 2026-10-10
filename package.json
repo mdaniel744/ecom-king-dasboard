@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 9915",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
     "test:gmc": "node --test tests/gmc-product-description.test.mjs tests/product-description-format.test.mjs tests/product-description-writing.test.mjs tests/product-identifiers.test.mjs tests/merchant-apparel.test.mjs",
