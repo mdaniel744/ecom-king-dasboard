@@ -362,16 +362,16 @@ const PALETTES = {
     muted: "#5c6a51",
     pageBg: "#eef3e1",
   },
-  navy: {
-    bannerFrom: "#2a4d7a",
-    bannerTo: "#0f2347",
-    accentText: "#0f2347",
-    tint: "#eef2f8",
-    tintStrong: "#dde6f0",
-    border: "#ccd8e8",
-    ink: "#15213a",
-    muted: "#5a6b85",
-    pageBg: "#eef1f6",
+  lemon: {
+    bannerFrom: "#d9e34a", // bright lemon
+    bannerTo: "#6b8e1f", // deeper lime/olive green
+    accentText: "#4d6314",
+    tint: "#f7faea",
+    tintStrong: "#eef3cf",
+    border: "#e2e8c0",
+    ink: "#2b350d",
+    muted: "#6b7a4a",
+    pageBg: "#f5f8e8",
   },
 } as const;
 
@@ -381,7 +381,7 @@ type Palette = (typeof PALETTES)[PaletteName];
 // Per-store banner color override. Add a line here when a tenant wants a palette other
 // than the default green — keyed by store id so it survives store renames.
 const STORE_PALETTE_OVERRIDES: Record<string, PaletteName> = {
-  "da2c7438-4763-416d-bf2d-d1f5f93b9c5f": "navy", // DIE Container GmbH
+  "da2c7438-4763-416d-bf2d-d1f5f93b9c5f": "lemon", // DIE Container GmbH
 };
 
 function resolvePalette(storeId: string): Palette {
@@ -536,7 +536,14 @@ export async function POST(request: NextRequest) {
   }
 
   const details = notificationDetails(type, row);
-  const dashboardUrl = new URL(route.path(id), request.nextUrl.origin).toString();
+  // request.nextUrl.origin reflects whatever host actually called this route (e.g. localhost
+  // during local testing), not necessarily the dashboard URL staff should click through to —
+  // use the configured public app URL instead, falling back to the known production domain.
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const appUrl = configuredAppUrl && !configuredAppUrl.includes("localhost")
+    ? configuredAppUrl
+    : "https://mycontainergmbh.com";
+  const dashboardUrl = new URL(route.path(id), appUrl).toString();
   const palette = resolvePalette(store.id);
 
   try {
