@@ -38,9 +38,9 @@ export const CHECKOUT_ORDER_STATUS_CLASS: Record<CheckoutOrderStatus, string> = 
   cancelled: "bg-red-100 text-red-900 hover:bg-red-100",
 };
 
-export function formatOrderMoney(amount: number, currency: string) {
+export function formatOrderMoney(amount: number, currency: string, locale = "en") {
   try {
-    return new Intl.NumberFormat("en", { style: "currency", currency }).format(amount);
+    return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount);
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
