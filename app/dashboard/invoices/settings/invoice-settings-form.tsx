@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Check, ImageIcon, ImagePlus, Loader2, RotateCcw, Save, Trash2 } from "lucide-react";
 import { updateInvoiceSettings } from "@/app/dashboard/invoices/actions";
+import { updateMarketVatRates } from "@/app/dashboard/market/actions";
 import { uploadDashboardImage } from "@/app/dashboard/upload-image-action";
 import { ActionErrorBanner } from "@/components/dashboard/action-error-banner";
+import { FieldError } from "@/components/dashboard/field-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,7 +22,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { defaultInvoiceSettings } from "@/lib/invoice-settings-defaults";
-import type { InvoiceSettings, InvoiceTemplate, PaymentSettings } from "@/lib/types";
+import { FEED_LABEL_OPTIONS, type MarketPricingSetting } from "@/lib/merchant-locales";
+import { invoicePreviewTotals, invoiceVatLabel } from "@/lib/invoice-vat";
+import { checkoutInvoiceAmounts, invoiceLineSubtotal, invoiceLineUnitPrice, type InvoiceOrderPreview } from "@/lib/checkout-invoice-amounts";
+import { addressLines } from "@/lib/checkout-order-display";
+import type { CustomerAddress, InvoiceSettings, InvoiceTemplate, PaymentSettings } from "@/lib/types";
 
 const templateOptions: Array<{
   value: InvoiceTemplate;
@@ -41,16 +48,31 @@ export function InvoiceSettingsForm({
   storeName,
   storeEmail,
   paymentSettings,
+  markets,
   isLocalDemo,
+  previewOrders,
+  previewOrdersError,
 }: {
   initialSettings: InvoiceSettings;
   storeName: string;
   storeEmail: string | null;
   paymentSettings: PaymentSettings;
+  markets: MarketPricingSetting[];
   isLocalDemo: boolean;
+  previewOrders: InvoiceOrderPreview[];
+  previewOrdersError: boolean;
 }) {
-  const [settings, setSettings] = useState(initialSettings);
+  const [settings, setSettings] = useState({ ...initialSettings, show_tax_breakdown: true });
+  const [previewOrderId, setPreviewOrderId] = useState("example");
+  const previewOrder = previewOrders.find(({ id }) => id === previewOrderId) ?? null;
   const [isPending, startTransition] = useTransition();
+  const [isVatPending, startVatTransition] = useTransition();
+  const [vatRates, setVatRates] = useState<Record<string, string>>(() =>
+    Object.fromEntries(markets.map(({ market, vatRate }) => [market, String(vatRate)]))
+  );
+  const [previewMarket, setPreviewMarket] = useState(markets[0]?.market ?? "");
+  const [vatError, setVatError] = useState<string | null>(null);
+  const [vatFieldErrors, setVatFieldErrors] = useState<Record<string, string>>({});
   const [isLogoUploading, setIsLogoUploading] = useState(false);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [logoFileName, setLogoFileName] = useState<string | null>(
@@ -58,6 +80,11 @@ export function InvoiceSettingsForm({
   );
   const [error, setError] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const previewMarketSetting = markets.find(({ market }) => market === previewMarket) ?? markets[0];
+  const previewRateInput = previewMarketSetting ? vatRates[previewMarketSetting.market] ?? "" : "";
+  const enteredPreviewRate = previewRateInput.trim() ? Number(previewRateInput) : NaN;
+  const previewVatRate = Number.isFinite(enteredPreviewRate) && enteredPreviewRate >= 0 && enteredPreviewRate <= 100
+    ? enteredPreviewRate : previewMarketSetting?.vatRate ?? 0;
 
   useEffect(() => {
     return () => {
@@ -75,6 +102,39 @@ export function InvoiceSettingsForm({
     setLogoFileName(null);
     if (logoInputRef.current) logoInputRef.current.value = "";
     setError(null);
+    setVatRates(Object.fromEntries(markets.map(({ market, vatRate }) => [market, String(vatRate)])));
+    setVatError(null);
+    setVatFieldErrors({});
+  };
+
+  const saveVatRates = () => {
+    const values: Record<string, number> = {};
+    const fieldErrors: Record<string, string> = {};
+    for (const { market } of markets) {
+      const input = (vatRates[market] ?? "").trim();
+      const value = Number(input);
+      if (!input || !Number.isFinite(value) || value < 0 || value > 100) {
+        fieldErrors[market] = "Enter a VAT rate from 0 to 100. Use 0 for no VAT.";
+      } else values[market] = value;
+    }
+    setVatFieldErrors(fieldErrors);
+    setVatError(null);
+    if (Object.keys(fieldErrors).length) return;
+
+    startVatTransition(async () => {
+      try {
+        const result = await updateMarketVatRates(values);
+        if (result.success) {
+          toast.success(isLocalDemo ? "Market VAT rates saved for this local session" : "Market VAT rates saved");
+        } else {
+          setVatError(result.error);
+          setVatFieldErrors(result.fieldErrors);
+          toast.error(result.error);
+        }
+      } catch {
+        setVatError("Could not save market VAT rates. Please try again.");
+      }
+    });
   };
 
   const removeLogo = () => {
@@ -390,30 +450,6 @@ export function InvoiceSettingsForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="invoice-vat-percentage">Default VAT rate</Label>
-              <div className="relative">
-                <Input
-                  id="invoice-vat-percentage"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.01}
-                  value={settings.vat_percentage}
-                  onChange={(event) =>
-                    update(
-                      "vat_percentage",
-                      Math.min(100, Math.max(0, Number(event.target.value) || 0))
-                    )
-                  }
-                  className="pr-10"
-                />
-                <span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Applied as the VAT line on new invoices. Adjust this to match your country&apos;s rate.
-              </p>
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="invoice-company-number">Company registration number</Label>
               <Input
                 id="invoice-company-number"
@@ -433,6 +469,42 @@ export function InvoiceSettingsForm({
                 maxLength={100}
               />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">VAT by delivery market</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Shared with storefront checkout and Merchant feeds. Existing orders keep their recorded VAT.
+            </p>
+            <Link href="/dashboard/market/delivery-markets" className="text-sm text-primary underline underline-offset-4">
+              Manage available markets
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ActionErrorBanner message={vatError} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              {markets.map(({ market, currency }) => (
+                <div key={market} className="space-y-2">
+                  <Label htmlFor={`invoice-market-vat-${market}`}>
+                    {FEED_LABEL_OPTIONS.find(({ value }) => value === market)?.label ?? market} VAT
+                  </Label>
+                  <div className="relative">
+                    <Input id={`invoice-market-vat-${market}`} type="number" min={0} max={100} step={0.01}
+                      value={vatRates[market] ?? ""} disabled={isVatPending || isPending}
+                      onChange={(event) => setVatRates((current) => ({ ...current, [market]: event.target.value }))}
+                      className="pr-10" aria-invalid={Boolean(vatFieldErrors[market])} />
+                    <span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{currency}</p>
+                  <FieldError name={market} errors={vatFieldErrors} />
+                </div>
+              ))}
+            </div>
+            <Button type="button" variant="outline" onClick={saveVatRates} disabled={isVatPending || isPending || !markets.length}>
+              <Save className="mr-2 h-4 w-4" /> {isVatPending ? "Saving..." : "Save market VAT rates"}
+            </Button>
           </CardContent>
         </Card>
 
@@ -577,7 +649,6 @@ export function InvoiceSettingsForm({
               ["show_logo", "Show business logo"],
               ["show_billing_address", "Show billing address"],
               ["show_shipping_address", "Show delivery address"],
-              ["show_tax_breakdown", "Show tax breakdown"],
             ].map(([key, label]) => (
               <label key={key} className="flex items-center gap-2 rounded-md border border-border px-3 py-2.5 text-sm">
                 <input
@@ -589,14 +660,17 @@ export function InvoiceSettingsForm({
                 {label}
               </label>
             ))}
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Product cost, discount, taxes and delivery are always shown from the saved checkout amounts.
+            </p>
           </CardContent>
         </Card>
 
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" onClick={resetPreview} disabled={isPending || isLogoUploading}>
+          <Button type="button" variant="outline" onClick={resetPreview} disabled={isPending || isVatPending || isLogoUploading}>
             <RotateCcw className="mr-2 h-4 w-4" /> Reset preview
           </Button>
-          <Button type="button" onClick={save} disabled={isPending || isLogoUploading}>
+          <Button type="button" onClick={save} disabled={isPending || isVatPending || isLogoUploading}>
             <Save className="mr-2 h-4 w-4" /> {isPending ? "Saving..." : "Save invoice settings"}
           </Button>
         </div>
@@ -604,12 +678,48 @@ export function InvoiceSettingsForm({
 
       <div className="xl:sticky xl:top-6 xl:self-start">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Live invoice preview
+          Invoice layout preview
         </p>
+        <div className="mb-4 space-y-2">
+          <Label htmlFor="invoice-preview-order">Preview order</Label>
+          <Select value={previewOrderId} onValueChange={setPreviewOrderId}>
+            <SelectTrigger id="invoice-preview-order"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="example">Example layout (not a real order)</SelectItem>
+              {previewOrders.map(order => (
+                <SelectItem key={order.id} value={order.id}>{order.order_number} · {order.customer_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {previewOrder ? "Using this order's exact checkout prices, taxes, delivery and currency. Market changes do not recalculate it."
+              : "Example amounts only. Select a recent order to check its actual invoice totals."}
+          </p>
+          {previewOrdersError && <p role="alert" className="text-xs text-destructive">Recent orders could not be loaded. Refresh to try again.</p>}
+          {previewOrder && <Link href={`/dashboard/store-orders/${previewOrder.id}`} className="inline-block text-xs text-primary underline">Manage this order</Link>}
+        </div>
+        {!previewOrder && markets.length > 0 && (
+          <div className="mb-4 space-y-2">
+            <Label htmlFor="invoice-preview-market">Preview market</Label>
+            <Select value={previewMarketSetting?.market} onValueChange={setPreviewMarket}>
+              <SelectTrigger id="invoice-preview-market"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {markets.map(({ market, currency }) => (
+                  <SelectItem key={market} value={market}>
+                    {FEED_LABEL_OPTIONS.find(({ value }) => value === market)?.label ?? market} · {currency}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <InvoicePreview
           settings={settings}
           paymentSettings={paymentSettings}
           logoPreviewUrl={logoPreviewUrl}
+          vatRate={previewVatRate}
+          currency={previewMarketSetting?.currency ?? "USD"}
+          order={previewOrder}
         />
       </div>
     </div>
@@ -620,27 +730,44 @@ function InvoicePreview({
   settings,
   paymentSettings,
   logoPreviewUrl,
+  vatRate,
+  currency,
+  order,
 }: {
   settings: InvoiceSettings;
   paymentSettings: PaymentSettings;
   logoPreviewUrl: string | null;
+  vatRate: number;
+  currency: string;
+  order: InvoiceOrderPreview | null;
 }) {
   const isModern = settings.template === "modern";
   const isClassic = settings.template === "classic";
   const isCorporate = settings.template === "corporate";
   const fontFamily = settings.font_family === "serif" ? "Georgia, serif" : "Arial, sans-serif";
-  const invoiceNumber = `${settings.invoice_prefix || "INV"}-2026-0042`;
+  const invoiceNumber = order
+    ? order.invoice_number || `${settings.invoice_prefix || "INV"}-${order.order_number.replace(/^ORD-?/i, "")}`
+    : `${settings.invoice_prefix || "INV"}-2026-0042`;
+  const orderNumber = order?.order_number || "ORD-2026-0042";
+  const invoiceDate = order ? new Date(order.created_at).toLocaleDateString("en-GB", { timeZone: "UTC" }) : "01 September 2026";
   const paymentTerms = settings.payment_terms || `Payment due within ${settings.due_days} days`;
   const deliveryTerms = settings.delivery_terms || "Estimated dispatch within 5–9 business days";
-  const previewSubtotal = 2880;
-  const previewDelivery = 620;
-  const vatAmount = Math.round(
-    (previewSubtotal + previewDelivery) * (settings.vat_percentage / 100) * 100
-  ) / 100;
-  const total = previewSubtotal + previewDelivery + vatAmount;
+  const example = invoicePreviewTotals(2880, 620, vatRate);
+  let amounts;
+  try {
+    amounts = checkoutInvoiceAmounts(order || {
+      subtotal: 2880, discount_amount: 0, shipping_amount: 620, tax_amount: example.taxAmount, total_amount: example.total,
+    });
+  } catch (error) {
+    return <div role="alert" className="rounded-lg border border-destructive/40 bg-card p-5 text-sm text-destructive">
+      {error instanceof Error ? error.message : "This order's checkout amounts could not be verified."}
+    </div>;
+  }
+  const { subtotal: previewSubtotal, discount, delivery: previewDelivery, tax: vatAmount, total } = amounts;
+  const invoiceCurrency = order?.currency || currency;
   const depositAmount = total * (settings.deposit_percentage / 100);
   const previewMoney = (value: number) =>
-    new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(value);
+    new Intl.NumberFormat("en-IE", { style: "currency", currency: invoiceCurrency }).format(value);
   const mutedHeaderText = isModern ? "text-white/75" : "text-slate-500";
   const footerIsFilled = isCorporate;
   const footerHeading = footerIsFilled ? "text-white" : "text-slate-700";
@@ -665,7 +792,7 @@ function InvoicePreview({
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em]">Invoice</p>
               <h2 className="mt-2 whitespace-nowrap text-xl font-semibold tracking-tight">{invoiceNumber}</h2>
-              <p className="mt-1 whitespace-nowrap text-xs text-slate-500">Issued 01 September 2026</p>
+              <p className="mt-1 whitespace-nowrap text-xs text-slate-500">Issued {invoiceDate}</p>
             </div>
             <div className="text-right">
               {settings.show_logo && logoSrc ? (
@@ -674,7 +801,7 @@ function InvoicePreview({
               ) : (
                 <p className="text-sm font-bold uppercase tracking-[0.16em]">{settings.business_name}</p>
               )}
-              <p className="mt-2 text-xs text-slate-500">Order ORD-2026-0042 · Page 1 of 1</p>
+              <p className="mt-2 text-xs text-slate-500">Order {orderNumber}</p>
             </div>
           </>
         ) : (
@@ -690,7 +817,7 @@ function InvoicePreview({
             </div>
             <div className="text-right text-xs leading-5">
               <p className="font-semibold">{invoiceNumber}</p>
-              <p className={mutedHeaderText}>Order ORD-2026-0042</p>
+              <p className={mutedHeaderText}>Order {orderNumber}</p>
               <p className={mutedHeaderText}>Due in {settings.due_days} days</p>
             </div>
           </>
@@ -702,16 +829,16 @@ function InvoicePreview({
           <>
             <div className="grid gap-5 sm:grid-cols-2">
               {settings.show_billing_address && (
-                <AddressPreview title="Billing address" />
+                <AddressPreview title="Billing address" address={order ? order.billing_address || { full_name: order.customer_name } : undefined} />
               )}
               {settings.show_shipping_address && (
-                <AddressPreview title="Delivery address" />
+                <AddressPreview title="Delivery address" address={order?.delivery_address} />
               )}
             </div>
             <div className="grid gap-5 rounded-lg bg-slate-50 p-4 sm:grid-cols-2">
               <div>
                 <p className="mb-2 font-semibold uppercase tracking-wider text-slate-400">Invoice details</p>
-                <PreviewDetail label="Invoice date" value="01 September 2026" />
+                <PreviewDetail label="Invoice date" value={invoiceDate} />
                 <PreviewDetail label="Payment terms" value={paymentTerms} />
                 <PreviewDetail label="Delivery" value={deliveryTerms} />
               </div>
@@ -733,7 +860,7 @@ function InvoicePreview({
               {settings.business_phone && <p className="text-slate-500">{settings.business_phone}</p>}
               {settings.vat_registration_number && <p className="mt-1 text-slate-500">VAT ID: {settings.vat_registration_number}</p>}
             </div>
-            {settings.show_billing_address && <AddressPreview title="Bill to" />}
+            {settings.show_billing_address && <AddressPreview title="Bill to" address={order ? order.billing_address || { full_name: order.customer_name } : undefined} />}
           </div>
         )}
 
@@ -747,29 +874,35 @@ function InvoicePreview({
             >
               <th className="p-2.5 text-left font-semibold">Product</th>
               <th className="p-2.5 text-center font-semibold">Qty</th>
-              <th className="p-2.5 text-right font-semibold">Unit price</th>
-              <th className="p-2.5 text-right font-semibold">Total</th>
+              <th className="p-2.5 text-right font-semibold">Unit price (net)</th>
+              <th className="p-2.5 text-right font-semibold">Product cost</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-slate-100">
+            {order ? order.line_items.map((item, index) => (
+              <tr key={`${item.product_id}-${index}`} className="border-b border-slate-100">
+                <td className="p-2.5 font-medium">{item.title}</td>
+                <td className="p-2.5 text-center">{item.quantity}</td>
+                <td className="p-2.5 text-right">{previewMoney(invoiceLineUnitPrice(item))}</td>
+                <td className="p-2.5 text-right font-medium">{previewMoney(invoiceLineSubtotal(item))}</td>
+              </tr>
+            )) : <tr className="border-b border-slate-100">
               <td className="p-2.5 font-medium">Premium product</td>
               <td className="p-2.5 text-center">2</td>
               <td className="p-2.5 text-right">{previewMoney(1440)}</td>
               <td className="p-2.5 text-right font-medium">{previewMoney(previewSubtotal)}</td>
-            </tr>
+            </tr>}
           </tbody>
         </table>
 
         <div className="ml-auto w-full max-w-64 space-y-2">
           <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{previewMoney(previewSubtotal)}</span></div>
+          <div className="flex justify-between text-slate-500"><span>Discount</span><span>{previewMoney(discount ? -discount : 0)}</span></div>
           <div className="flex justify-between text-slate-500"><span>Delivery</span><span>{previewMoney(previewDelivery)}</span></div>
-          {settings.show_tax_breakdown && (
-            <div className="flex justify-between text-slate-500">
-              <span>VAT {settings.vat_percentage}%</span>
-              <span>{previewMoney(vatAmount)}</span>
-            </div>
-          )}
+          <div className="flex justify-between text-slate-500">
+            <span>{invoiceVatLabel("VAT", order ? order.tax_rate : vatRate, "en-IE")}</span>
+            <span>{previewMoney(vatAmount)}</span>
+          </div>
           <div className="flex justify-between border-t-2 pt-2 text-sm font-bold" style={{ borderColor: settings.accent_color, color: settings.accent_color }}>
             <span>Total</span><span>{previewMoney(total)}</span>
           </div>
@@ -787,8 +920,7 @@ function InvoicePreview({
 
         {!isCorporate && settings.show_shipping_address && (
           <div className="rounded-lg bg-slate-50 p-4">
-            <p className="font-semibold">Delivery address</p>
-            <p className="mt-1 leading-5 text-slate-500">Amaka Bello · 18 Allen Avenue, Ikeja, Lagos</p>
+            <AddressPreview title="Delivery address" address={order?.delivery_address} />
           </div>
         )}
 
@@ -850,16 +982,18 @@ function InvoicePreview({
   );
 }
 
-function AddressPreview({ title }: { title: string }) {
+function AddressPreview({ title, address }: { title: string; address?: CustomerAddress | null }) {
   return (
     <div>
       <p className="mb-2 font-semibold uppercase tracking-wider text-slate-400">{title}</p>
+      {address !== undefined ? <p className="whitespace-pre-line leading-5 text-slate-500">{addressLines(address).join("\n") || "—"}</p> : <>
       <p className="font-semibold">Amaka Bello</p>
       <p className="mt-1 leading-5 text-slate-500">
         Bello Retail Limited<br />
         18 Allen Avenue<br />
         Ikeja, Lagos
       </p>
+      </>}
     </div>
   );
 }

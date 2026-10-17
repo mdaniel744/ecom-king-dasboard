@@ -22,10 +22,12 @@ import {
   formatOrderMoney,
 } from "@/lib/checkout-order-display";
 import { OrderManagementPanel } from "./order-management-panel";
+import { InvoiceHistory } from "./invoice-history";
 import { CustomerAddressDetails } from "@/components/dashboard/customer-address-details";
 import { humanizeKey, readableValue } from "@/lib/inquiry-display";
 import { bankTransferForCurrency } from "@/lib/payment-currency";
 import { getPaymentSettings } from "@/lib/payment-settings";
+import { checkoutInvoiceAmounts, invoiceLineSubtotal, invoiceLineUnitPrice } from "@/lib/checkout-invoice-amounts";
 import type { CheckoutOrder } from "@/lib/types";
 
 export default async function StoreOrderDetailPage({ params }: PageProps<"/dashboard/store-orders/[id]">) {
@@ -47,6 +49,9 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
 
   if (!data) notFound();
   const order = data as CheckoutOrder;
+  let invoiceAmountsError: string | null = null;
+  try { checkoutInvoiceAmounts(order); }
+  catch (error) { invoiceAmountsError = error instanceof Error ? error.message : "The checkout amounts could not be verified."; }
   const paymentSettings = await getPaymentSettings(store.id);
   const bankCurrency = bankTransferForCurrency(paymentSettings, order.currency);
   const customerDetailRows = Object.entries(order.customer_details ?? {}).filter(([, value]) =>
@@ -139,7 +144,7 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
                       Quantity {item.quantity}{item.condition ? ` · ${item.condition}` : ""}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Unit price {formatOrderMoney(item.price, item.currency || order.currency)}
+                      Unit price (net) {formatOrderMoney(invoiceAmountsError ? item.price : invoiceLineUnitPrice(item), order.currency)}
                       {item.sku ? ` · SKU ${item.sku}` : ""}
                       {item.brand ? ` · ${item.brand}` : ""}
                     </p>
@@ -174,10 +179,11 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
                   <div className="ml-auto shrink-0 text-right">
                     <p className="font-medium">
                       {formatOrderMoney(
-                        item.line_total ?? item.price * item.quantity,
+                        invoiceAmountsError ? item.line_subtotal ?? item.price * item.quantity : invoiceLineSubtotal(item),
                         order.currency
                       )}
                     </p>
+                    <p className="text-xs text-muted-foreground">Product cost</p>
                     {item.line_tax_amount != null && (
                       <p className="text-xs text-muted-foreground">
                         VAT {formatOrderMoney(item.line_tax_amount, order.currency)}
@@ -194,12 +200,14 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
               <ReceiptText className="h-4 w-4 text-primary" />
               <h2 className="font-semibold">Checkout price breakdown</h2>
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">Original checkout amounts, including recorded taxes and delivery. Current market settings do not change these prices.</p>
+            {invoiceAmountsError && <p role="alert" className="mt-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{invoiceAmountsError}</p>}
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatOrderMoney(order.subtotal, order.currency)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>-{formatOrderMoney(order.discount_amount, order.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>{formatOrderMoney(order.discount_amount ? -order.discount_amount : 0, order.currency)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Delivery{order.delivery_method ? ` · ${order.delivery_method}` : ""}</span><span>{formatOrderMoney(order.shipping_amount, order.currency)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">VAT{order.tax_rate != null ? ` (${order.tax_rate}%)` : ""}</span><span>{formatOrderMoney(order.tax_amount, order.currency)}</span></div>
-              <div className="flex justify-between border-t border-border pt-3 text-base font-semibold"><span>Total</span><span>{formatOrderMoney(order.total_amount, order.currency)}</span></div>
+              <div className="flex justify-between border-t border-border pt-3 text-base font-semibold"><span>Checkout total</span><span>{formatOrderMoney(order.total_amount, order.currency)}</span></div>
             </div>
             {(order.market || order.locale) && (
               <p className="mt-3 text-xs text-muted-foreground">
@@ -261,6 +269,7 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
               </div>
             )}
           </section>
+          <InvoiceHistory storeId={store.id} orderId={order.id} previouslySent={Boolean(order.invoice_sent_at)} />
         </div>
 
         <OrderManagementPanel

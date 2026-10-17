@@ -4,8 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { isLocalDemoMode } from "@/lib/local-demo";
-import { sendCheckoutInvoiceEmail, checkoutInvoiceNumber } from "@/lib/checkout-invoice";
+import { deliverCheckoutInvoice, InvoiceDeliveryError } from "@/lib/invoice-documents";
 import { getInvoiceSettings } from "@/lib/invoice-settings";
 import { getPaymentSettings } from "@/lib/payment-settings";
 import { validate, validateId } from "@/lib/validation";
@@ -92,40 +91,14 @@ export async function sendCheckoutOrderInvoice(orderId: string): Promise<ActionR
       getInvoiceSettings(store),
       getPaymentSettings(store.id),
     ]);
-    const invoiceNumber = checkoutInvoiceNumber(order, invoiceSettings);
-
-    if (!isLocalDemoMode) {
-      try {
-        await sendCheckoutInvoiceEmail(order, store, invoiceSettings, paymentSettings);
-      } catch {
-        await supabaseAdmin
-          .from("checkout_orders")
-          .update({ invoice_status: "failed" })
-          .eq("id", order.id)
-          .eq("store_id", store.id);
-        revalidateOrder(order.id);
-        return {
-          success: false,
-          error: "The invoice email could not be sent. Check the email settings and try again.",
-          fieldErrors: {},
-        };
-      }
-    }
-
-    const { error: updateError } = await supabaseAdmin
-      .from("checkout_orders")
-      .update({
-        invoice_number: invoiceNumber,
-        invoice_status: "sent",
-        invoice_sent_at: new Date().toISOString(),
-      })
-      .eq("id", order.id)
-      .eq("store_id", store.id);
-
-    if (updateError) throw updateError;
+    await deliverCheckoutInvoice(order, store, invoiceSettings, paymentSettings);
     revalidateOrder(order.id);
     return ok();
   } catch (error) {
+    revalidateOrder(orderId);
+    if (error instanceof InvoiceDeliveryError) {
+      return { success: false, error: error.message, fieldErrors: {} };
+    }
     return toActionResult(error);
   }
 }

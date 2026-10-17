@@ -22,7 +22,13 @@ export const isLocalDemoMode = process.env.LOCAL_DEMO_MODE === "true";
 
 const now = "2026-01-01T00:00:00.000Z";
 
-export const localDemoStore: Store = {
+// Next dev can load this module separately for each page/action bundle.
+// Share only the demo store within this process so market edits reach both UIs.
+const demoRuntime = globalThis as typeof globalThis & {
+  ecomKingDemoStore?: Store;
+  ecomKingDemoInvoiceTables?: Record<string, Record<string, unknown>[]>;
+};
+export const localDemoStore: Store = (isLocalDemoMode ? demoRuntime.ecomKingDemoStore : undefined) ?? {
   id: "00000000-0000-4000-8000-000000000001",
   name: "Ecom King Demo",
   slug: "ecom-king-demo",
@@ -54,6 +60,7 @@ export const localDemoStore: Store = {
   created_at: now,
   updated_at: now,
 };
+if (isLocalDemoMode) demoRuntime.ecomKingDemoStore = localDemoStore;
 
 const demoCategory: Category = {
   id: "00000000-0000-4000-8000-000000000101",
@@ -660,6 +667,15 @@ const demoRowsByTable: Record<string, Record<string, unknown>[]> = {
   ],
   order_messages: demoEscrowMessages as unknown as Record<string, unknown>[],
 };
+
+// The order page, send action and PDF endpoint run in separate Next bundles.
+// Keep this demo-only archive in memory across those bundles (never a real DB).
+if (isLocalDemoMode) {
+  const shared = demoRuntime.ecomKingDemoInvoiceTables ??= {};
+  for (const table of ["checkout_orders", "checkout_invoice_documents", "invoice_settings", "payment_settings"]) {
+    demoRowsByTable[table] = shared[table] ??= demoRowsByTable[table] ?? [];
+  }
+}
 
 type DemoResult = {
   data: unknown;

@@ -64,6 +64,7 @@ export async function sendMail(opts: {
   to: string;
   subject: string;
   html: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
   fromName?: string;
   /** A store's own resolved SMTP override (see resolveStoreSmtp) -- omit to
    * use the platform's shared mailbox, same as before this existed. */
@@ -82,5 +83,6 @@ export async function sendMail(opts: {
     to: opts.to,
     subject: opts.subject,
     html: opts.html,
+    attachments: opts.attachments,
   });
 }

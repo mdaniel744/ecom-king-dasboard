@@ -4,13 +4,42 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { validate } from "@/lib/validation";
+import { validate, ValidationError } from "@/lib/validation";
 import { ok, toActionResult, type ActionResult } from "@/lib/action-result";
 import { checkProductLinks, type LinkCheckResult } from "@/lib/google-merchant";
-import { defaultCurrencyForMarket, FEED_LABEL_OPTIONS } from "@/lib/merchant-locales";
+import { defaultCurrencyForMarket, FEED_LABEL_OPTIONS, getStoreMarkets } from "@/lib/merchant-locales";
 import type { Product } from "@/lib/types";
 
 const DELIVERY_MARKET_CODES = new Set(FEED_LABEL_OPTIONS.map((option) => option.value));
+const marketVatRatesSchema = z.record(
+  z.string().regex(/^[A-Z]{2}$/, "Choose a configured delivery market"),
+  z.number().min(0, "VAT must be at least 0%").max(100, "VAT cannot exceed 100%")
+);
+
+/** Update the shared storefront/checkout/feed rates, not a separate invoice tax table. */
+export async function updateMarketVatRates(rates: Record<string, number>): Promise<ActionResult> {
+  try {
+    const store = await getCurrentStore();
+    const values = validate(marketVatRatesSchema, rates);
+    const markets = new Set(getStoreMarkets(store));
+    if (!markets.size || Object.keys(values).some((market) => !markets.has(market)) ||
+        [...markets].some((market) => !Object.hasOwn(values, market))) {
+      throw new ValidationError("Delivery markets have changed. Refresh this page and enter a VAT rate for each configured market.");
+    }
+
+    const { error } = await supabaseAdmin.from("stores")
+      .update({ vat_rates: { ...store.vat_rates, ...values } }).eq("id", store.id);
+    if (error) throw error;
+
+    revalidatePath("/dashboard/invoices/settings");
+    revalidatePath("/dashboard/market/delivery-markets");
+    revalidatePath("/dashboard/market/xml-feed-urls");
+    revalidatePath("/dashboard/products", "layout");
+    return ok();
+  } catch (error) {
+    return toActionResult(error);
+  }
+}
 
 const googleMerchantSchema = z.object({
   googleMerchantId: z.string().trim().max(100).nullable(),
@@ -196,6 +225,7 @@ export async function updateDeliveryMarketSettings(formData: FormData): Promise<
 
     revalidatePath("/dashboard/market/delivery-markets");
     revalidatePath("/dashboard/market/xml-feed-urls");
+    revalidatePath("/dashboard/invoices/settings");
     revalidatePath("/dashboard/products");
     return ok();
   } catch (err) {

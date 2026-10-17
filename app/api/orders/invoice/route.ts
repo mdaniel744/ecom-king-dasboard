@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkoutInvoiceNumber, sendCheckoutInvoiceEmail } from "@/lib/checkout-invoice";
+import { deliverCheckoutInvoice, getOrderInvoiceDocuments } from "@/lib/invoice-documents";
 import { getInvoiceSettings } from "@/lib/invoice-settings";
 import { getPaymentSettings } from "@/lib/payment-settings";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -32,6 +32,11 @@ export async function POST(request: NextRequest) {
   if (order.invoice_status === "sent") {
     return NextResponse.json({ ok: true, skipped: "already_sent" });
   }
+  const history = await getOrderInvoiceDocuments(order.store_id, order.id);
+  if (history.error) return NextResponse.json({ error: "Invoice archive unavailable" }, { status: 503 });
+  if (history.documents.some(document => document.send_status === "sent")) {
+    return NextResponse.json({ ok: true, skipped: "already_archived" });
+  }
 
   const { data: storeData } = await supabaseAdmin
     .from("stores")
@@ -53,21 +58,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await sendCheckoutInvoiceEmail(order, store, invoiceSettings, paymentSettings);
-    await supabaseAdmin
-      .from("checkout_orders")
-      .update({
-        invoice_number: checkoutInvoiceNumber(order, invoiceSettings),
-        invoice_status: "sent",
-        invoice_sent_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
+    await deliverCheckoutInvoice(order, store, invoiceSettings, paymentSettings, { automatic: true });
   } catch (error) {
     console.error("Automatic order invoice failed:", error);
-    await supabaseAdmin
-      .from("checkout_orders")
-      .update({ invoice_status: "failed" })
-      .eq("id", order.id);
     return NextResponse.json({ error: "Send failed" }, { status: 500 });
   }
 

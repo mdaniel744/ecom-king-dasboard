@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  outputFileTracingIncludes: {
+    "/*": [
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf",
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf",
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSerif.ttf",
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSerif-Bold.ttf",
+      "./node_modules/dejavu-fonts-ttf/LICENSE",
+    ],
+  },
   // Allows the dev server to serve JS/CSS/RSC assets when accessed from
   // another device on the LAN (e.g. testing on a phone via 192.168.x.x:port)
   // — without this, Next.js's dev-only cross-origin protection silently

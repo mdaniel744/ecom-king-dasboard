@@ -15,7 +15,8 @@ export async function getInvoiceSettings(
     .maybeSingle();
 
   // Stores that have not run the optional invoice migration yet should still
-  // be able to open orders and send the existing default invoice.
+  // be able to open orders with the existing default layout. Sending PDFs
+  // separately requires the private invoice-documents migration.
   if (error || !data) return defaults;
 
   return { ...defaults, ...(data as Partial<InvoiceSettings>), store_id: store.id };

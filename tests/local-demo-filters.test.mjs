@@ -42,3 +42,33 @@ test("demo IS boolean distinguishes true, false and missing values", async () =>
     assert.deepEqual(data.map(row => row.id), [id]);
   }
 });
+
+test("demo market VAT survives a separate page/action module load in the same server session", async () => {
+  const firstPage = demoClient();
+  const { data: store } = await firstPage.from("stores").select().single();
+  const originalRates = store.vat_rates;
+  try {
+    await firstPage.from("stores").update({ vat_rates: { DE: 19, CZ: 21 } }).eq("id", store.id);
+    const nextPage = demoClient();
+    const { data: sharedStore } = await nextPage.from("stores").select().single();
+    assert.deepEqual(sharedStore.vat_rates, { DE: 19, CZ: 21 });
+  } finally {
+    await firstPage.from("stores").update({ vat_rates: originalRates }).eq("id", store.id);
+  }
+});
+
+test("demo invoice archive survives separate send-action and PDF-download modules", async () => {
+  const sender = demoClient();
+  const id = "00000000-0000-4000-8000-000000000901";
+  try {
+    await sender.from("checkout_invoice_documents").insert({
+      id, store_id: "demo-store", order_id: "demo-order", pdf_base64: "JVBERi0=", send_status: "sent",
+    });
+    const downloader = demoClient();
+    const { data } = await downloader.from("checkout_invoice_documents").select("pdf_base64")
+      .eq("id", id).eq("store_id", "demo-store").eq("order_id", "demo-order").single();
+    assert.equal(data.pdf_base64, "JVBERi0=");
+  } finally {
+    await sender.from("checkout_invoice_documents").delete().eq("id", id);
+  }
+});

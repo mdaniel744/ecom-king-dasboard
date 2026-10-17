@@ -83,16 +83,17 @@ export function OrderManagementPanel({
     startTransition(async () => {
       const result = await sendCheckoutOrderInvoice(orderId);
       if (result.success) {
-        toast.success(invoiceStatus === "sent" ? "Invoice sent again" : "Invoice sent");
+        toast.success("Invoice PDF saved and send completed");
         router.refresh();
       } else {
         toast.error(result.error ?? "Could not send the invoice.");
+        router.refresh();
       }
     });
   };
 
   return (
-    <div className="space-y-5 rounded-lg border border-border bg-card p-5">
+    <div className="self-start space-y-5 rounded-lg border border-border bg-card p-5">
       <div>
         <h2 className="font-semibold">Manage order</h2>
         <p className="text-sm text-muted-foreground">
@@ -158,7 +159,7 @@ export function OrderManagementPanel({
             <p className="text-sm font-medium">Customer invoice</p>
             <p className="text-xs text-muted-foreground">
               {CHECKOUT_INVOICE_STATUS_LABEL[invoiceStatus]}
-              {invoiceSentAt ? ` · ${new Date(invoiceSentAt).toLocaleString()}` : ""}
+              {invoiceSentAt ? ` · ${new Date(invoiceSentAt).toLocaleString("en-GB", { timeZone: "UTC" })} UTC` : ""}
             </p>
             {autoInvoice && (
               <p className="mt-1 text-xs text-emerald-700">
