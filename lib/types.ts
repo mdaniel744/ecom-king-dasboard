@@ -402,6 +402,7 @@ export type InvoiceSettings = {
   payment_terms: string | null;
   delivery_terms: string | null;
   deposit_percentage: number;
+  vat_percentage: number;
   commercial_terms: string | null;
   auto_send: boolean;
   footer_note: string | null;

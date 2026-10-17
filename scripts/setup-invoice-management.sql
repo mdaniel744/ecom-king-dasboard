@@ -28,6 +28,8 @@ create table if not exists public.invoice_settings (
   delivery_terms text,
   deposit_percentage integer not null default 0
     check (deposit_percentage between 0 and 100),
+  vat_percentage numeric(5,2) not null default 19
+    check (vat_percentage between 0 and 100),
   commercial_terms text,
   auto_send boolean not null default true,
   footer_note text,
@@ -49,7 +51,8 @@ alter table public.invoice_settings
   add column if not exists payment_terms text,
   add column if not exists delivery_terms text,
   add column if not exists deposit_percentage integer not null default 0,
-  add column if not exists commercial_terms text;
+  add column if not exists commercial_terms text,
+  add column if not exists vat_percentage numeric(5,2) not null default 19;
 
 alter table public.invoice_settings
   drop constraint if exists invoice_settings_template_check;
@@ -62,6 +65,12 @@ alter table public.invoice_settings
 alter table public.invoice_settings
   add constraint invoice_settings_deposit_percentage_check
   check (deposit_percentage between 0 and 100);
+
+alter table public.invoice_settings
+  drop constraint if exists invoice_settings_vat_percentage_check;
+alter table public.invoice_settings
+  add constraint invoice_settings_vat_percentage_check
+  check (vat_percentage between 0 and 100);
 
 create index if not exists invoice_settings_store_idx
   on public.invoice_settings (store_id);

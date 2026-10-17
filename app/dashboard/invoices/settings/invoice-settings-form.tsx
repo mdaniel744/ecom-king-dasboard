@@ -156,6 +156,7 @@ export function InvoiceSettingsForm({
         paymentTerms: stringValue(settings.payment_terms),
         deliveryTerms: stringValue(settings.delivery_terms),
         depositPercentage: settings.deposit_percentage,
+        vatPercentage: settings.vat_percentage,
         commercialTerms: stringValue(settings.commercial_terms),
         autoSend: settings.auto_send,
         footerNote: stringValue(settings.footer_note),
@@ -389,6 +390,30 @@ export function InvoiceSettingsForm({
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="invoice-vat-percentage">Default VAT rate</Label>
+              <div className="relative">
+                <Input
+                  id="invoice-vat-percentage"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={settings.vat_percentage}
+                  onChange={(event) =>
+                    update(
+                      "vat_percentage",
+                      Math.min(100, Math.max(0, Number(event.target.value) || 0))
+                    )
+                  }
+                  className="pr-10"
+                />
+                <span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Applied as the VAT line on new invoices. Adjust this to match your country&apos;s rate.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="invoice-company-number">Company registration number</Label>
               <Input
                 id="invoice-company-number"
@@ -607,7 +632,12 @@ function InvoicePreview({
   const invoiceNumber = `${settings.invoice_prefix || "INV"}-2026-0042`;
   const paymentTerms = settings.payment_terms || `Payment due within ${settings.due_days} days`;
   const deliveryTerms = settings.delivery_terms || "Estimated dispatch within 5–9 business days";
-  const total = 4165;
+  const previewSubtotal = 2880;
+  const previewDelivery = 620;
+  const vatAmount = Math.round(
+    (previewSubtotal + previewDelivery) * (settings.vat_percentage / 100) * 100
+  ) / 100;
+  const total = previewSubtotal + previewDelivery + vatAmount;
   const depositAmount = total * (settings.deposit_percentage / 100);
   const previewMoney = (value: number) =>
     new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(value);
@@ -726,15 +756,20 @@ function InvoicePreview({
               <td className="p-2.5 font-medium">Premium product</td>
               <td className="p-2.5 text-center">2</td>
               <td className="p-2.5 text-right">{previewMoney(1440)}</td>
-              <td className="p-2.5 text-right font-medium">{previewMoney(2880)}</td>
+              <td className="p-2.5 text-right font-medium">{previewMoney(previewSubtotal)}</td>
             </tr>
           </tbody>
         </table>
 
         <div className="ml-auto w-full max-w-64 space-y-2">
-          <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{previewMoney(2880)}</span></div>
-          <div className="flex justify-between text-slate-500"><span>Delivery</span><span>{previewMoney(620)}</span></div>
-          {settings.show_tax_breakdown && <div className="flex justify-between text-slate-500"><span>VAT 19%</span><span>{previewMoney(665)}</span></div>}
+          <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{previewMoney(previewSubtotal)}</span></div>
+          <div className="flex justify-between text-slate-500"><span>Delivery</span><span>{previewMoney(previewDelivery)}</span></div>
+          {settings.show_tax_breakdown && (
+            <div className="flex justify-between text-slate-500">
+              <span>VAT {settings.vat_percentage}%</span>
+              <span>{previewMoney(vatAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between border-t-2 pt-2 text-sm font-bold" style={{ borderColor: settings.accent_color, color: settings.accent_color }}>
             <span>Total</span><span>{previewMoney(total)}</span>
           </div>

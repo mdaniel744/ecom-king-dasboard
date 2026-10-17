@@ -27,6 +27,7 @@ export function defaultInvoiceSettings(
     payment_terms: null,
     delivery_terms: null,
     deposit_percentage: 0,
+    vat_percentage: 19,
     commercial_terms: null,
     auto_send: true,
     footer_note: "Thank you for your business.",

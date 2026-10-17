@@ -41,6 +41,7 @@ const invoiceSettingsSchema = z.object({
   paymentTerms: z.string().trim().max(500).nullable(),
   deliveryTerms: z.string().trim().max(500).nullable(),
   depositPercentage: z.number().int().min(0).max(100),
+  vatPercentage: z.number().min(0).max(100),
   commercialTerms: z.string().trim().max(2000).nullable(),
   autoSend: z.boolean(),
   footerNote: z.string().trim().max(1000).nullable(),
@@ -71,6 +72,7 @@ type InvoiceSettingsValues = {
   paymentTerms: string;
   deliveryTerms: string;
   depositPercentage: number;
+  vatPercentage: number;
   commercialTerms: string;
   autoSend: boolean;
   footerNote: string;
@@ -126,6 +128,7 @@ export async function updateInvoiceSettings(
       payment_terms: fields.paymentTerms,
       delivery_terms: fields.deliveryTerms,
       deposit_percentage: fields.depositPercentage,
+      vat_percentage: fields.vatPercentage,
       commercial_terms: fields.commercialTerms,
       auto_send: fields.autoSend,
       footer_note: fields.footerNote,
