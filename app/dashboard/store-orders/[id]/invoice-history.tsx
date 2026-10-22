@@ -1,12 +1,13 @@
 import { Download, ExternalLink, FileText } from "lucide-react";
-import { getOrderInvoiceDocuments } from "@/lib/invoice-documents";
+import { getOrderInvoiceDocuments, type InvoiceHistoryResult } from "@/lib/invoice-documents";
+import { formatOrderMoney } from "@/lib/checkout-order-display";
 import { isLocalDemoMode } from "@/lib/local-demo";
 import { Button } from "@/components/ui/button";
 
-export async function InvoiceHistory({ storeId, orderId, previouslySent }: {
-  storeId: string; orderId: string; previouslySent: boolean;
+export async function InvoiceHistory({ storeId, orderId, previouslySent, history }: {
+  storeId: string; orderId: string; previouslySent: boolean; history?: InvoiceHistoryResult;
 }) {
-  const { documents, error } = await getOrderInvoiceDocuments(storeId, orderId);
+  const { documents, error } = history ?? await getOrderInvoiceDocuments(storeId, orderId);
   return (
     <section id="invoice-files" className="rounded-lg border border-border bg-card p-5">
       <div className="flex items-center gap-2">
@@ -34,6 +35,11 @@ export async function InvoiceHistory({ storeId, orderId, previouslySent }: {
                     <p className="mt-1 break-all text-xs text-muted-foreground">
                       {document.recipient_email} · {document.locale.toUpperCase()} · PDF
                     </p>
+                    {document.pricing_snapshot && <p className="mt-1 text-xs text-muted-foreground">
+                      Total {formatOrderMoney(document.pricing_snapshot.total, document.pricing_snapshot.currency)}
+                      {" · "}Delivery {formatOrderMoney(document.pricing_snapshot.delivery, document.pricing_snapshot.currency)}
+                      {" · "}VAT {formatOrderMoney(document.pricing_snapshot.tax, document.pricing_snapshot.currency)}
+                    </p>}
                     <p className={`mt-1 text-xs ${document.send_status === "sent" ? "text-emerald-700" : "text-amber-700"}`}>
                       {document.send_status === "sent" ? (isLocalDemoMode ? "Simulated send" : "Sent") : document.send_status === "failed" ? "Email failed - PDF saved" : "Delivery unconfirmed - check email logs before retrying"}
                       {" · "}{new Date(document.sent_at || document.created_at).toLocaleString()}

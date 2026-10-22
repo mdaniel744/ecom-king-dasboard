@@ -17,6 +17,8 @@ import {
 } from "@/lib/checkout-order-display";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getStoreInvoiceDocuments } from "@/lib/invoice-documents";
+import type { InvoicePricingSnapshot } from "@/lib/invoice-delivery";
 import type { CheckoutInvoiceStatus, CheckoutOrder } from "@/lib/types";
 
 const invoiceStatusClass: Record<CheckoutInvoiceStatus, string> = {
@@ -36,15 +38,25 @@ function groupedTotal(orders: CheckoutOrder[]) {
 
 export default async function InvoicesPage() {
   const store = await getCurrentStore();
-  const { data } = await supabaseAdmin
+  const [{ data }, history] = await Promise.all([supabaseAdmin
     .from("checkout_orders")
     .select("*")
     .eq("store_id", store.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }), getStoreInvoiceDocuments(store.id)]);
   const orders = (data ?? []) as CheckoutOrder[];
+  const latestPricing = new Map<string, InvoicePricingSnapshot>();
+  for (const document of history.documents) {
+    if (document.send_status === "sent" && document.pricing_snapshot && !latestPricing.has(document.order_id)) {
+      latestPricing.set(document.order_id, document.pricing_snapshot);
+    }
+  }
   const invoices = orders.filter(
     (order) => Boolean(order.invoice_number) || order.invoice_status !== "not_sent"
-  );
+  ).map(order => ({ ...order,
+    // Display the latest invoice amount, not the unchanged checkout amount.
+    total_amount: latestPricing.get(order.id)?.total ?? order.total_amount,
+    currency: latestPricing.get(order.id)?.currency ?? order.currency,
+  }));
   const sentInvoices = invoices.filter((invoice) => invoice.invoice_status === "sent");
   const failedInvoices = invoices.filter((invoice) => invoice.invoice_status === "failed");
 
@@ -65,6 +77,11 @@ export default async function InvoicesPage() {
       </div>
 
       <InvoiceSectionNav active="register" />
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+        <p>Add a delivery fee and review VAT before sending an invoice from its order.</p>
+        <Button asChild size="sm" variant="outline"><Link href="/dashboard/store-orders">Choose an order</Link></Button>
+      </div>
+      {history.error && <p role="alert" className="mt-3 text-sm text-destructive">{history.error} Checkout totals are shown until the invoice archive is available.</p>}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
@@ -149,8 +166,8 @@ export default async function InvoicesPage() {
                       </td>
                       <td className="py-4 text-right">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={`/dashboard/store-orders/${invoice.id}`}>
-                            Manage <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                          <Link href={`/dashboard/store-orders/${invoice.id}#customer-invoice`}>
+                            Prepare invoice <ArrowRight className="ml-1 h-3.5 w-3.5" />
                           </Link>
                         </Button>
                       </td>

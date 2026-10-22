@@ -24,6 +24,7 @@ const i18n = load("../lib/invoice-i18n.ts");
 const display = load("../lib/checkout-order-display.ts");
 const vat = load("../lib/invoice-vat.ts");
 const amounts = load("../lib/checkout-invoice-amounts.ts");
+const delivery = load("../lib/invoice-delivery.ts", { "./checkout-invoice-amounts": amounts });
 const payment = load("../lib/payment-currency.ts");
 const defaults = load("../lib/invoice-settings-defaults.ts");
 const paymentDefaults = load("../lib/payment-settings-defaults.ts");
@@ -104,6 +105,7 @@ function deliveryFixture(options = {}) {
       renderCheckoutInvoicePdf: async () => Buffer.from("%PDF-1.7\nFrozen invoice fixture") },
     "@/lib/invoice-i18n": i18n,
     "@/lib/checkout-invoice-amounts": amounts,
+    "@/lib/invoice-delivery": delivery,
   });
   return { invoice, db, emails };
 }
@@ -172,6 +174,23 @@ test("local demo archives PDFs but never sends real email", async () => {
   await fixture.invoice.deliverCheckoutInvoice(order, store, settings, payments);
   assert.equal(fixture.emails.length, 0);
   assert.equal(fixture.db.rows.checkout_invoice_documents[0].send_status, "sent");
+});
+
+test("a prepared delivery invoice archives its own calculation without rewriting checkout prices", async () => {
+  const fixture = deliveryFixture();
+  const invoice = delivery.prepareInvoiceDelivery(order, 150, 21);
+  await fixture.invoice.deliverCheckoutInvoice(invoice, store, settings, payments, {
+    pricingBasis: "items_and_delivery", checkoutTotal: order.total_amount,
+  });
+  const snapshot = fixture.db.rows.checkout_invoice_documents[0].pricing_snapshot;
+  assert.equal(snapshot.delivery, 150);
+  assert.equal(snapshot.taxable_amount, 2150);
+  assert.equal(snapshot.tax, 451.5);
+  assert.equal(snapshot.total, 2601.5);
+  assert.equal(snapshot.checkout_total, 2520);
+  assert.equal(fixture.db.rows.checkout_orders[0].shipping_amount, 100);
+  assert.equal(fixture.db.rows.checkout_orders[0].tax_amount, 420);
+  assert.equal(fixture.db.rows.checkout_orders[0].total_amount, 2520);
 });
 
 test("unbalanced checkout totals are rejected before PDF archiving or SMTP", async () => {
@@ -276,4 +295,29 @@ test("renderer creates paginated, Unicode-font PDFs with stable totals and no HT
     writeFileSync(new URL("../tmp/pdfs/invoice-multipage.pdf", import.meta.url), multi);
   }
   assert.equal(pdfModule.invoicePdfFilename('INV-1"\r\n/path'), "INV-1____path.pdf");
+});
+
+test("delivery-inclusive VAT reaches both the customer email and the actual PDF", async () => {
+  const checkout = { ...order, locale: "en", currency: "EUR", subtotal: 1000, shipping_amount: 0,
+    tax_amount: 200, tax_rate: 20, total_amount: 1200,
+    line_items: [{ ...order.line_items[0], title: "Product example", price: 1000, quantity: 1 }],
+  };
+  const invoiceOrder = delivery.prepareInvoiceDelivery(checkout, 100, 20);
+  const emails = [];
+  const invoice = load("../lib/checkout-invoice.ts", {
+    "@/lib/mailer": { sendMail: async value => emails.push(value), resolveStoreSmtp: () => undefined },
+    "@/lib/checkout-order-display": display, "@/lib/invoice-settings-defaults": defaults,
+    "@/lib/payment-settings-defaults": paymentDefaults, "@/lib/payment-currency": payment,
+    "@/lib/invoice-i18n": i18n, "@/lib/invoice-vat": vat, "@/lib/checkout-invoice-amounts": amounts,
+  });
+  const bytes = await pdfModule.renderCheckoutInvoicePdf(invoiceOrder, settings, payments, "INV-DELIVERY-VAT", "2026-10-22T12:00:00Z");
+  await invoice.sendCheckoutInvoiceEmail(invoiceOrder, store, settings, payments, {
+    filename: "invoice.pdf", content: bytes, issuedAt: "2026-10-22T12:00:00Z",
+  });
+  for (const value of ["€1,000.00", "€100.00", "€220.00", "€1,320.00"]) assert.ok(emails[0].html.includes(value), value);
+  assert.deepEqual(emails[0].attachments[0].content, bytes);
+  if (process.env.INVOICE_DELIVERY_PDF_QA === "true") {
+    mkdirSync(new URL("../tmp/pdfs/", import.meta.url), { recursive: true });
+    writeFileSync(new URL("../tmp/pdfs/invoice-delivery-vat.pdf", import.meta.url), bytes);
+  }
 });

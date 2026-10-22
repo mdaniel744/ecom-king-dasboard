@@ -4,7 +4,9 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getCurrentStore } from "@/lib/get-current-store";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { deliverCheckoutInvoice, InvoiceDeliveryError } from "@/lib/invoice-documents";
+import { deliverCheckoutInvoice, getOrderInvoiceDocuments, InvoiceDeliveryError } from "@/lib/invoice-documents";
+import { canEditInvoiceDelivery, prepareInvoiceDelivery, restoreInvoicePricing } from "@/lib/invoice-delivery";
+import { CheckoutInvoiceAmountError } from "@/lib/checkout-invoice-amounts";
 import { getInvoiceSettings } from "@/lib/invoice-settings";
 import { getPaymentSettings } from "@/lib/payment-settings";
 import { validate, validateId } from "@/lib/validation";
@@ -71,10 +73,19 @@ export async function updateCheckoutOrder(
   }
 }
 
-export async function sendCheckoutOrderInvoice(orderId: string): Promise<ActionResult> {
+const invoiceDeliverySchema = z.object({
+  deliveryFee: z.number().finite().min(0).max(1_000_000_000),
+  vatRate: z.number().finite().min(0).max(100),
+  expectedUpdatedAt: z.string().min(1).max(100),
+}).strict();
+
+export async function sendCheckoutOrderInvoice(orderId: string, pricing?: {
+  deliveryFee: number; vatRate: number; expectedUpdatedAt: string;
+}): Promise<ActionResult> {
+  const store = await getCurrentStore();
   try {
     orderId = validateId(orderId);
-    const store = await getCurrentStore();
+    const fields = pricing === undefined ? undefined : validate(invoiceDeliverySchema, pricing);
     const { data, error } = await supabaseAdmin
       .from("checkout_orders")
       .select("*")
@@ -87,16 +98,29 @@ export async function sendCheckoutOrderInvoice(orderId: string): Promise<ActionR
     }
 
     const order = data as CheckoutOrder;
+    if (fields && !canEditInvoiceDelivery(order)) {
+      throw new InvoiceDeliveryError("Delivery fees cannot be changed on paid, refunded, completed or cancelled orders.");
+    }
+    if (fields && fields.expectedUpdatedAt !== order.updated_at) {
+      throw new InvoiceDeliveryError("This order changed while you were editing. Refresh and review the invoice before sending.");
+    }
+    const history = await getOrderInvoiceDocuments(store.id, order.id);
+    if (history.error) throw new InvoiceDeliveryError(history.error);
+    const lastPricing = history.documents.find(document => document.send_status === "sent")?.pricing_snapshot;
+    const invoice = fields ? prepareInvoiceDelivery(order, fields.deliveryFee, fields.vatRate) : restoreInvoicePricing(order, lastPricing);
     const [invoiceSettings, paymentSettings] = await Promise.all([
       getInvoiceSettings(store),
       getPaymentSettings(store.id),
     ]);
-    await deliverCheckoutInvoice(order, store, invoiceSettings, paymentSettings);
+    await deliverCheckoutInvoice(invoice, store, invoiceSettings, paymentSettings, {
+      pricingBasis: fields ? "items_and_delivery" : lastPricing?.basis ?? "checkout",
+      checkoutTotal: order.total_amount,
+    });
     revalidateOrder(order.id);
     return ok();
   } catch (error) {
     revalidateOrder(orderId);
-    if (error instanceof InvoiceDeliveryError) {
+    if (error instanceof InvoiceDeliveryError || error instanceof CheckoutInvoiceAmountError) {
       return { success: false, error: error.message, fieldErrors: {} };
     }
     return toActionResult(error);

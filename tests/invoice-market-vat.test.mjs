@@ -99,11 +99,11 @@ test("saving VAT from Delivery Markets also refreshes the invoice customizer", a
   assert.ok(fixture.revalidated.includes("/dashboard/invoices/settings"));
 });
 
-test("invoice preview uses the selected market's VAT on net products, matching checkout without a second delivery tax", () => {
-  assert.deepEqual(invoiceVat.invoicePreviewTotals(2880, 620, 19), { taxAmount: 547.2, total: 4047.2 });
-  assert.deepEqual(invoiceVat.invoicePreviewTotals(2880, 620, 21), { taxAmount: 604.8, total: 4104.8 });
+test("new invoice examples include delivery in the taxable base; recorded checkout amounts remain independent", () => {
+  assert.deepEqual(invoiceVat.invoicePreviewTotals(2880, 620, 19), { taxAmount: 665, total: 4165 });
+  assert.deepEqual(invoiceVat.invoicePreviewTotals(2880, 620, 21), { taxAmount: 735, total: 4235 });
   assert.deepEqual(invoiceVat.invoicePreviewTotals(2880, 620, 0), { taxAmount: 0, total: 3500 });
-  assert.deepEqual(invoiceVat.invoicePreviewTotals(10.01, 2, 19.5), { taxAmount: 1.95, total: 13.96 });
+  assert.deepEqual(invoiceVat.invoicePreviewTotals(10.01, 2, 19.5), { taxAmount: 2.34, total: 14.35 });
 });
 
 test("invoice tax labels preserve recorded zero, localize decimal rates, and never guess an unknown historical rate", () => {

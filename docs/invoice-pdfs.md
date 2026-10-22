@@ -7,8 +7,8 @@ order and document IDs. There are no public PDF links or public storage buckets.
 
 Both automatic checkout invoices and the order's Send/Resend action archive the
 PDF before emailing it as an attachment. Each send gets a separate record; the
-PDF bytes, recipient, number and issue date cannot be edited. PDFs use the saved
-checkout totals, tax rate, currency and language. Layout settings are read only
+PDF bytes, recipient, number and issue date cannot be edited. Automatic invoices use
+the saved checkout totals, tax rate, currency and language. Layout settings are read only
 at generation time, so subsequent customization does not change existing PDFs.
 Unicode fonts are packaged with the app. PNG/JPEG logos from the store's own
 Supabase image bucket are embedded; inaccessible/other logos use text branding.
@@ -20,6 +20,34 @@ tax and delivery, even if the legacy `show_tax_breakdown` setting was false.
 Invoices are rejected before PDF creation/email if their saved product amounts
 or final totals do not balance; the system never silently changes a checkout total
 or adds today's VAT to tax-inclusive checkout amounts.
+
+## Delivery fee before sending
+
+From Invoices, choose **Prepare invoice**, or open the order's **Customer invoice**
+panel. Staff can enter a delivery fee and VAT rate for an unpaid order. The live
+calculation and server use the same rule (rounded to currency minor units):
+
+`taxable amount = net item subtotal - discount + delivery fee`
+
+`VAT = taxable amount × VAT rate / 100`
+
+`invoice total = taxable amount + VAT`
+
+Only fee, rate and the expected order version come from the browser. The server
+re-reads the authenticated store's order and rejects stale previews. Checkout
+product prices, payment records and previously issued PDFs are never rewritten.
+The new `pricing_snapshot` field records each invoice's own totals, including its
+original checkout total. The invoice register displays the latest sent invoice's
+amount; the order's checkout breakdown continues to show the original checkout.
+
+Re-run the latest `scripts/setup-invoice-documents.sql` before deploying this
+change. It safely adds the nullable snapshot field to existing archives without
+rewriting old documents. Old documents with no snapshot keep their legacy behavior.
+Failed sends retain their attempted snapshot but do not become the default for a
+later resend. Paid/refunded/completed/cancelled orders cannot edit fees; resends
+keep their latest sent invoice's archived amounts. Automatic sending is not delayed
+by this manual editor; disable it in Invoice Settings if delivery must be entered
+before the first customer invoice.
 
 Invoice Settings clearly distinguishes its example layout from actual orders.
 Its recent-order selector uses store-scoped checkout snapshots: switching market

@@ -15,11 +15,16 @@ create table if not exists public.checkout_invoice_documents (
   locale text not null,
   send_status text not null default 'pending' check (send_status in ('pending', 'sent', 'failed')),
   automatic boolean not null default false,
+  pricing_snapshot jsonb check (pricing_snapshot is null or jsonb_typeof(pricing_snapshot) = 'object'),
   created_at timestamptz not null default now(),
   sent_at timestamptz,
   foreign key (order_id, store_id) references public.checkout_orders(id, store_id) on delete cascade,
   check ((send_status = 'sent') = (sent_at is not null))
 );
+-- Safe upgrade for installations that already created the PDF archive table.
+-- Existing documents remain unchanged; old rows simply have a null snapshot.
+alter table public.checkout_invoice_documents add column if not exists pricing_snapshot jsonb
+  check (pricing_snapshot is null or jsonb_typeof(pricing_snapshot) = 'object');
 create index if not exists checkout_invoice_documents_order_idx
   on public.checkout_invoice_documents (store_id, order_id, created_at desc);
 -- Prevent concurrent clicks/webhook deliveries from emailing duplicate copies.

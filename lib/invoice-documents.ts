@@ -7,6 +7,7 @@ import { checkoutInvoiceNumber, sendCheckoutInvoiceEmail } from "@/lib/checkout-
 import { invoiceLogoBytes, invoicePdfFilename, renderCheckoutInvoicePdf } from "@/lib/invoice-pdf";
 import { normalizeInvoiceLocale } from "@/lib/invoice-i18n";
 import { checkoutInvoiceAmounts, CheckoutInvoiceAmountError } from "@/lib/checkout-invoice-amounts";
+import { snapshotInvoicePricing, type InvoicePricingSnapshot } from "@/lib/invoice-delivery";
 import type { CheckoutOrder, InvoiceSettings, PaymentSettings, Store } from "@/lib/types";
 
 export type InvoiceDocument = {
@@ -14,22 +15,32 @@ export type InvoiceDocument = {
   file_name: string; recipient_email: string; locale: string;
   send_status: "pending" | "sent" | "failed";
   created_at: string; sent_at: string | null;
+  pricing_snapshot?: InvoicePricingSnapshot | null;
 };
-const columns = "id,store_id,order_id,invoice_number,file_name,recipient_email,locale,send_status,created_at,sent_at";
-export const INVOICE_ARCHIVE_SETUP_MESSAGE = "PDF archiving is not ready. Run scripts/setup-invoice-documents.sql in Supabase before sending invoices.";
+const columns = "id,store_id,order_id,invoice_number,file_name,recipient_email,locale,send_status,created_at,sent_at,pricing_snapshot";
+export const INVOICE_ARCHIVE_SETUP_MESSAGE = "PDF archiving is not ready. Run the latest scripts/setup-invoice-documents.sql in Supabase before sending invoices.";
 export class InvoiceDeliveryError extends Error {}
 
-export async function getOrderInvoiceDocuments(storeId: string, orderId: string) {
+export type InvoiceHistoryResult = { documents: InvoiceDocument[]; error: string | null };
+async function listInvoiceDocuments(storeId: string, orderId?: string): Promise<InvoiceHistoryResult> {
   // Paged reads avoid Supabase's default 1,000-row response cap; PDF bytes are never listed.
   const documents: InvoiceDocument[] = [];
   for (let from = 0; ; from += 100) {
-    const { data, error } = await supabaseAdmin.from("checkout_invoice_documents").select(columns)
-      .eq("store_id", storeId).eq("order_id", orderId).order("created_at", { ascending: false }).range(from, from + 99);
-    if (error) return { documents: [], error: error.code === "42P01" || error.code === "PGRST205"
+    let query = supabaseAdmin.from("checkout_invoice_documents").select(columns).eq("store_id", storeId);
+    if (orderId) query = query.eq("order_id", orderId);
+    const { data, error } = await query.order("created_at", { ascending: false }).range(from, from + 99);
+    if (error) return { documents: [], error: ["42P01", "42703", "PGRST204", "PGRST205"].includes(error.code)
       ? INVOICE_ARCHIVE_SETUP_MESSAGE : "Invoice files could not be loaded. Please refresh and try again." };
     documents.push(...(data ?? []) as InvoiceDocument[]);
     if ((data?.length ?? 0) < 100) return { documents, error: null };
   }
+}
+
+export async function getOrderInvoiceDocuments(storeId: string, orderId: string) {
+  return listInvoiceDocuments(storeId, orderId);
+}
+export async function getStoreInvoiceDocuments(storeId: string) {
+  return listInvoiceDocuments(storeId);
 }
 
 type InvoiceStore = Pick<Store, "id" | "name" | "notification_sender_name" | "notification_email" |
@@ -38,7 +49,7 @@ type InvoiceStore = Pick<Store, "id" | "name" | "notification_sender_name" | "no
 /** Archive BEFORE emailing. A failed resend never deletes earlier sent PDFs. */
 export async function deliverCheckoutInvoice(
   order: CheckoutOrder, store: InvoiceStore, settings: InvoiceSettings, payments: PaymentSettings,
-  options: { automatic?: boolean } = {}
+  options: { automatic?: boolean; pricingBasis?: InvoicePricingSnapshot["basis"]; checkoutTotal?: number } = {}
 ) {
   if (order.store_id !== store.id || settings.store_id !== store.id || payments.store_id !== store.id) {
     throw new InvoiceDeliveryError("Invoice ownership does not match this store.");
@@ -59,6 +70,7 @@ export async function deliverCheckoutInvoice(
     file_name: fileName, pdf_base64: pdf.toString("base64"), recipient_email: order.customer_email,
     locale: normalizeInvoiceLocale(order.locale), send_status: "pending", created_at: createdAt, sent_at: null,
     automatic: options.automatic ?? false,
+    pricing_snapshot: snapshotInvoicePricing(order, options.pricingBasis, options.checkoutTotal),
   });
   if (archiveError) throw new InvoiceDeliveryError(archiveError.code === "23505"
     ? "An invoice send is already in progress or awaiting confirmation. Check the invoice history before retrying."

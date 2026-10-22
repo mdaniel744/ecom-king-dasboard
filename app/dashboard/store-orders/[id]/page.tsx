@@ -23,6 +23,8 @@ import {
 } from "@/lib/checkout-order-display";
 import { OrderManagementPanel } from "./order-management-panel";
 import { InvoiceHistory } from "./invoice-history";
+import { getOrderInvoiceDocuments } from "@/lib/invoice-documents";
+import { canEditInvoiceDelivery, restoreInvoicePricing } from "@/lib/invoice-delivery";
 import { CustomerAddressDetails } from "@/components/dashboard/customer-address-details";
 import { humanizeKey, readableValue } from "@/lib/inquiry-display";
 import { bankTransferForCurrency } from "@/lib/payment-currency";
@@ -52,7 +54,15 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
   let invoiceAmountsError: string | null = null;
   try { checkoutInvoiceAmounts(order); }
   catch (error) { invoiceAmountsError = error instanceof Error ? error.message : "The checkout amounts could not be verified."; }
-  const paymentSettings = await getPaymentSettings(store.id);
+  const [paymentSettings, invoiceHistory] = await Promise.all([
+    getPaymentSettings(store.id), getOrderInvoiceDocuments(store.id, order.id),
+  ]);
+  const latestPricing = invoiceHistory.documents.find(document => document.send_status === "sent")?.pricing_snapshot;
+  let invoiceSource = order;
+  let invoicePricingError = invoiceAmountsError;
+  try { invoiceSource = restoreInvoicePricing(order, latestPricing); }
+  catch (error) { invoicePricingError = error instanceof Error ? error.message : "The last invoice amounts could not be verified."; }
+  const invoiceVatRate = invoiceSource.tax_rate ?? (order.market ? store.vat_rates?.[order.market] : undefined) ?? null;
   const bankCurrency = bankTransferForCurrency(paymentSettings, order.currency);
   const customerDetailRows = Object.entries(order.customer_details ?? {}).filter(([, value]) =>
     readableValue(value)
@@ -269,7 +279,7 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
               </div>
             )}
           </section>
-          <InvoiceHistory storeId={store.id} orderId={order.id} previouslySent={Boolean(order.invoice_sent_at)} />
+          <InvoiceHistory storeId={store.id} orderId={order.id} previouslySent={Boolean(order.invoice_sent_at)} history={invoiceHistory} />
         </div>
 
         <OrderManagementPanel
@@ -281,6 +291,17 @@ export default async function StoreOrderDetailPage({ params }: PageProps<"/dashb
           invoiceStatus={order.invoice_status}
           invoiceSentAt={order.invoice_sent_at}
           autoInvoice={order.auto_invoice}
+          invoiceOrder={{
+            subtotal: invoiceSource.subtotal, discount_amount: invoiceSource.discount_amount,
+            shipping_amount: invoiceSource.shipping_amount, tax_amount: invoiceSource.tax_amount,
+            tax_rate: invoiceSource.tax_rate, total_amount: invoiceSource.total_amount,
+            currency: order.currency, updated_at: order.updated_at,
+          }}
+          checkoutTotal={order.total_amount}
+          invoiceVatRate={invoiceVatRate}
+          invoiceEditable={canEditInvoiceDelivery(order)}
+          invoicePricingError={invoicePricingError}
+          invoiceArchiveError={invoiceHistory.error}
         />
       </div>
     </div>

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,9 @@ import {
   CHECKOUT_INVOICE_STATUS_LABEL,
   CHECKOUT_ORDER_STATUS_LABEL,
   CHECKOUT_PAYMENT_STATUS_LABEL,
+  formatOrderMoney,
 } from "@/lib/checkout-order-display";
+import { parseInvoiceNumber, prepareInvoiceDelivery, type InvoiceDeliveryAmounts } from "@/lib/invoice-delivery";
 import {
   sendCheckoutOrderInvoice,
   updateCheckoutOrder,
@@ -45,6 +48,12 @@ export function OrderManagementPanel({
   invoiceStatus,
   invoiceSentAt,
   autoInvoice,
+  invoiceOrder,
+  checkoutTotal,
+  invoiceVatRate,
+  invoiceEditable,
+  invoicePricingError,
+  invoiceArchiveError,
 }: {
   orderId: string;
   initialOrderStatus: CheckoutOrderStatus;
@@ -54,6 +63,12 @@ export function OrderManagementPanel({
   invoiceStatus: CheckoutInvoiceStatus;
   invoiceSentAt: string | null;
   autoInvoice: boolean;
+  invoiceOrder: InvoiceDeliveryAmounts & { currency: string; updated_at: string };
+  checkoutTotal: number;
+  invoiceVatRate: number | null;
+  invoiceEditable: boolean;
+  invoicePricingError: string | null;
+  invoiceArchiveError: string | null;
 }) {
   const router = useRouter();
   const [orderStatus, setOrderStatus] = useState(initialOrderStatus);
@@ -61,6 +76,25 @@ export function OrderManagementPanel({
   const [trackingNumber, setTrackingNumber] = useState(initialTrackingNumber);
   const [adminNotes, setAdminNotes] = useState(initialAdminNotes);
   const [isPending, startTransition] = useTransition();
+  const [deliveryInput, setDeliveryInput] = useState(invoiceOrder.shipping_amount.toFixed(2));
+  const [vatInput, setVatInput] = useState(invoiceVatRate == null ? "" : String(invoiceVatRate));
+  useEffect(() => {
+    setDeliveryInput(invoiceOrder.shipping_amount.toFixed(2));
+    setVatInput(invoiceVatRate == null ? "" : String(invoiceVatRate));
+  }, [orderId, invoiceOrder.updated_at, invoiceOrder.shipping_amount, invoiceVatRate]);
+  const deliveryFee = parseInvoiceNumber(deliveryInput);
+  const vatRate = parseInvoiceNumber(vatInput);
+  let invoicePreview = invoiceOrder;
+  let deliveryError: string | null = invoicePricingError;
+  if (invoiceEditable && !deliveryError) {
+    if (deliveryFee == null) deliveryError = "Enter a delivery fee with at most two decimal places. Use 0 for no delivery fee.";
+    else if (vatRate == null) deliveryError = "Enter a VAT rate. Use 0 for a VAT-exempt invoice.";
+    else {
+      try { invoicePreview = prepareInvoiceDelivery(invoiceOrder, deliveryFee, vatRate); }
+      catch (error) { deliveryError = error instanceof Error ? error.message : "The invoice amounts could not be calculated."; }
+    }
+  }
+  const money = (amount: number) => formatOrderMoney(amount, invoiceOrder.currency, "en-GB");
 
   const saveOrder = () => {
     startTransition(async () => {
@@ -80,8 +114,11 @@ export function OrderManagementPanel({
   };
 
   const sendInvoice = () => {
+    if (deliveryError || invoiceArchiveError) return;
     startTransition(async () => {
-      const result = await sendCheckoutOrderInvoice(orderId);
+      const result = await sendCheckoutOrderInvoice(orderId, invoiceEditable ? {
+        deliveryFee: deliveryFee!, vatRate: vatRate!, expectedUpdatedAt: invoiceOrder.updated_at,
+      } : undefined);
       if (result.success) {
         toast.success("Invoice PDF saved and send completed");
         router.refresh();
@@ -152,7 +189,7 @@ export function OrderManagementPanel({
         Save Order
       </Button>
 
-      <div className="border-t border-border pt-5">
+      <div id="customer-invoice" className="scroll-mt-20 border-t border-border pt-5">
         <div className="flex items-start gap-2">
           <Mail className="mt-0.5 h-4 w-4 text-primary" />
           <div>
@@ -168,7 +205,42 @@ export function OrderManagementPanel({
             )}
           </div>
         </div>
-        <Button type="button" variant="outline" className="mt-3 w-full" disabled={isPending} onClick={sendInvoice}>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label htmlFor={`invoice-delivery-${orderId}`} className="text-sm font-medium">Delivery fee ({invoiceOrder.currency})</label>
+            <Input id={`invoice-delivery-${orderId}`} type="number" inputMode="decimal" min={0} max={1_000_000_000} step={0.01}
+              value={deliveryInput} onChange={event => setDeliveryInput(event.target.value)} disabled={isPending || !invoiceEditable}
+              aria-invalid={Boolean(deliveryError)} aria-describedby={`invoice-pricing-help-${orderId}`} />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor={`invoice-vat-${orderId}`} className="text-sm font-medium">VAT rate (%)</label>
+            <Input id={`invoice-vat-${orderId}`} type="number" inputMode="decimal" min={0} max={100} step={0.01}
+              value={vatInput} placeholder="Not recorded" onChange={event => setVatInput(event.target.value)} disabled={isPending || !invoiceEditable}
+              aria-invalid={Boolean(deliveryError)} />
+          </div>
+        </div>
+        <p id={`invoice-pricing-help-${orderId}`} className="mt-2 text-xs text-muted-foreground">
+          {invoiceEditable ? "Applies to the new invoice only. Original checkout and earlier PDFs stay unchanged."
+            : "Paid, refunded, completed and cancelled orders keep their saved invoice amounts."}
+        </p>
+        {autoInvoice && <p className="mt-2 text-xs text-muted-foreground">
+          To add delivery before the first invoice is sent, turn off automatic sending in <Link href="/dashboard/invoices/settings" className="text-primary underline">Invoice Settings</Link>.
+        </p>}
+        {deliveryError ? <p role="alert" className="mt-3 text-sm text-destructive">{deliveryError}</p> : (
+          <dl className="mt-4 space-y-2 rounded-md bg-muted/40 p-3 text-sm" aria-label="Invoice calculation">
+            <div className="flex justify-between gap-2"><dt>Items (net)</dt><dd>{money(invoicePreview.subtotal)}</dd></div>
+            {invoicePreview.discount_amount > 0 && <div className="flex justify-between gap-2"><dt>Discount</dt><dd>{money(-invoicePreview.discount_amount)}</dd></div>}
+            <div className="flex justify-between gap-2"><dt>Delivery</dt><dd>{money(invoicePreview.shipping_amount)}</dd></div>
+            {invoiceEditable && <div className="flex justify-between gap-2 text-muted-foreground"><dt>Taxable amount</dt><dd>{money(Math.round((invoicePreview.subtotal - invoicePreview.discount_amount + invoicePreview.shipping_amount) * 100) / 100)}</dd></div>}
+            <div className="flex justify-between gap-2"><dt>VAT{invoicePreview.tax_rate != null ? ` (${invoicePreview.tax_rate}%)` : ""}</dt><dd>{money(invoicePreview.tax_amount)}</dd></div>
+            <div className="flex justify-between gap-2 border-t border-border pt-2 font-semibold"><dt>Invoice total</dt><dd>{money(invoicePreview.total_amount)}</dd></div>
+          </dl>
+        )}
+        {!deliveryError && invoicePreview.total_amount !== checkoutTotal && <p className="mt-2 text-xs text-amber-700">
+          This invoice differs from the original checkout total of {money(checkoutTotal)}.
+        </p>}
+        {invoiceArchiveError && <p role="alert" className="mt-3 text-sm text-destructive">{invoiceArchiveError}</p>}
+        <Button type="button" variant="outline" className="mt-3 w-full" disabled={isPending || Boolean(deliveryError) || Boolean(invoiceArchiveError)} onClick={sendInvoice}>
           {invoiceStatus === "sent" ? "Resend Invoice" : "Send Invoice Now"}
         </Button>
       </div>
